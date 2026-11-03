@@ -288,8 +288,10 @@ STUB
   [[ "$output" == *"notification.toolkit.fluxcd.io/v1beta3"* ]] || false
   run "$ROOT/scripts/validate.sh" "$d"
   [ "$status" -eq 0 ]
-  # not wired into any default kustomization
-  ! grep -rn 'flux-notifications' "$ROOT/infrastructure" "$ROOT/clusters" --include='*.yaml' | grep -v '^[^:]*flux-notifications/'
+  # not wired into any default kustomization (a bare `! cmd` mid-test is never checked by bats)
+  refs="$(grep -rn 'flux-notifications' "$ROOT/infrastructure" "$ROOT/clusters" --include='*.yaml' \
+    | grep -v '^[^:]*flux-notifications/' || true)"
+  [ -z "$refs" ] || { echo "referenced outside its directory: $refs"; false; }
   grep -qi 'secret' "$d/README.md"
 }
 
