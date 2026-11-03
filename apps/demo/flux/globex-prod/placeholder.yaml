@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apps-placeholder
+  namespace: flux-system
+data:
+  note: the demo app for globex-prod is delivered from here (Task 7)

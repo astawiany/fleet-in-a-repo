@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apps-placeholder
+  namespace: flux-system
+data:
+  note: the demo app for acme-prod is delivered from here (Task 7)
