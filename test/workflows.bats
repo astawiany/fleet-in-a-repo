@@ -162,6 +162,11 @@ workflows() { ls "$WF"/*.yml; }
   grep -q 'make smoke' "$f"
   # teardown must run even when smoke fails
   [ "$(yq '[.jobs.smoke.steps[] | select(.run == "make down") | select(.if == "always()")] | length' "$f")" = "1" ]
+  # ubuntu-24.04 runners refuse `pip install --user` (PEP 668): yamllint comes from pipx, pinned
+  [ "$(yq '[.jobs.lint.steps[] | select(.run != null) | select(.run | contains("pipx install yamllint=="))] | length' "$f")" = "1" ] || false
+  grep -Eq 'pipx install yamllint==[0-9]+\.[0-9]+\.[0-9]+$' "$f" || false
+  run grep -c 'pip install --user' "$f"
+  [ "$output" -eq 0 ] || false
   # mgmt-up pushes HEAD to a bare repo: the smoke checkout must not be shallow
   [ "$(yq '.jobs.smoke.steps[] | select(.uses == "actions/checkout*") | .with."fetch-depth"' "$f")" = "0" ] || false
 }

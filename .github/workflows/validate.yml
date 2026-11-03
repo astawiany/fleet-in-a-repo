@@ -29,7 +29,8 @@ jobs:
         run: |
           scripts/ci-install-tools.sh kustomize kubeconform helm
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          pip install --user yamllint==1.37.1
+          # pipx: ubuntu-24.04's system Python refuses pip --user installs (PEP 668)
+          pipx install yamllint==1.37.1
       - run: make lint
 
   validate:
