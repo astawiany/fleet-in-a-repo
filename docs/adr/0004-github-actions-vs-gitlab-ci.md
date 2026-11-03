@@ -4,10 +4,10 @@ Status: accepted
 
 ## Context
 
-The repository is public and hosted on GitHub, so its pipelines are GitHub Actions. This ADR is
+The repository is intended to be published on GitHub, so its pipelines are GitHub Actions. This ADR is
 written for GitLab practitioners: it maps the GitLab CI concepts they know onto GitHub's, and says
 where this repo uses each. The workflows in `.github/workflows/` have been statically tested
-(`test/workflows.bats`) but not yet executed against a live GitHub repository.
+(`test/workflows.bats`); they have not yet run against a live repository.
 
 ## Decision
 

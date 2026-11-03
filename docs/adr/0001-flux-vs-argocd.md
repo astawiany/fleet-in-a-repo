@@ -14,13 +14,19 @@ man. It was compared, not built.
 
 Use Flux (pinned in `versions.env` as `FLUX_VERSION`). The deciding properties for this repo:
 
-- **Dependency ordering and health gating.** `Kustomization.spec.dependsOn` and `wait: true`
-  (see `clusters/*/apps.yaml`, `infrastructure/base/components.yaml`) make "apps wait until the
-  platform is healthy" a declarative property. `HelmRelease` objects can depend on each other too.
-- **Per-cluster variables.** `postBuild.substituteFrom` injects add-on versions and the MetalLB
+- **Dependency ordering and health gating.** Argo CD orders work with sync waves and hooks; Flux
+  has `Kustomization.spec.dependsOn` and `wait: true` (see `clusters/*/apps.yaml`,
+  `infrastructure/base/components.yaml`), which make "apps wait until the platform is healthy" a
+  declarative property between objects. `HelmRelease` objects can depend on each other too.
+- **Per-cluster variables.** Argo CD can template or inject values via ApplicationSet generators
+  and go templates, Helm `valuesObject`/parameters, and plugins; Flux has `postBuild.substituteFrom`
+  built in. Here it injects add-on versions and the MetalLB
   pool from the `cluster-vars` ConfigMap, so one `infrastructure/` tree serves every cluster.
 - **Pull-based, one repo, many clusters.** Each cluster runs its own Flux pointed at
-  `clusters/<name>/`; there is no central controller holding credentials for every cluster.
+  `clusters/<name>/`; the reconciliation path has no central controller pushing to every cluster.
+  This is not the whole credential picture: the management cluster still holds a kubeconfig for
+  every workload cluster as a Cluster API Secret, and `scripts/sync-workloads.sh` uses exported
+  kubeconfigs to install Flux.
 - **Notifications.** notification-controller can post Kustomization results as commit statuses
   (opt-in manifests in `infrastructure/base/flux-notifications/`, disabled by default because they
   need a token Secret).
@@ -41,9 +47,11 @@ Use Flux (pinned in `versions.env` as `FLUX_VERSION`). The deciding properties f
 
 ## Alternatives
 
-- **Argo CD.** Strong UI, ApplicationSets, rich RBAC and SSO. Rejected for this repo because the
-  hub-and-spoke model needs a central instance with credentials for every cluster, there is no
-  native equivalent of `postBuild.substituteFrom` (it needs a plugin or Helm parameters), and the
-  control plane is heavier for a laptop demo. For a team that wants a UI-first workflow it remains
+- **Argo CD.** Strong UI, ApplicationSets, rich RBAC and SSO. Not chosen for this repo. Hub-and-spoke (one
+  Argo CD instance with credentials for many clusters) is the common topology, though one instance
+  per cluster is possible. Argo CD can do per-cluster value injection via ApplicationSet
+  generators, Helm parameters or plugins where Flux has `postBuild.substituteFrom` built in, and
+  orders with sync waves and hooks where Flux has `dependsOn` plus health gating. The tilt toward
+  Flux is a matter of fit and laptop footprint, not capability. For a team that wants a UI-first workflow it remains
   a sound choice.
 - **Plain CI-driven `kubectl apply`/`helm upgrade`.** Rejected: push-based, no drift correction.

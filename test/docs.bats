@@ -57,3 +57,7 @@ setup() {
   run grep -rIiE "$pat" . --exclude-dir=.git --exclude-dir=.work --exclude-dir=superpowers --exclude-dir=.superpowers --exclude=docs.bats
   [[ "$status" -eq 1 ]] || { echo "$output"; false; }
 }
+
+@test "README keeps the recorded-demo placeholder until the link is added" {
+  grep -q "Recorded demo:" "$ROOT/README.md" || { echo "README lacks the 'Recorded demo:' line"; false; }
+}

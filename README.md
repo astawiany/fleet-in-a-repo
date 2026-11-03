@@ -31,8 +31,8 @@ Details, Flux layering and the promotion diagram: [docs/architecture.md](docs/ar
 
 ## Quickstart
 
-Prerequisites: Docker, `kind`, `clusterctl`, `flux`, `helm`, `kubectl`, `yq`, `kubeconform`, `bats`
-(`scripts/preflight.sh` checks them and Docker memory). Versions are pinned in `versions.env`.
+Prerequisites: Docker, `kind`, `clusterctl`, `flux`, `helm`, `kubectl`, `kubeconform` (checked by
+`scripts/preflight.sh`, together with Docker memory), plus `yq` and `bats` (not checked by preflight). Versions are pinned in `versions.env`.
 
 ```sh
 FLEET_PROFILE=lite make up      # management cluster + workload clusters, Flux everywhere
@@ -45,13 +45,20 @@ synced to the clusters (the offline git server serves git HEAD), so commit befor
 
 Measured on a 7.7 GiB Docker Desktop with the lite profile: `make up` about 7 to 8 minutes
 (after the first image pulls), `make smoke` about 1.5 minutes, 12/12 checks PASS.
+That run left only about 1 GiB of the VM spare (container peak about 5.1 GiB, swap in use). The
+preflight floor of 6 GiB for lite was never run on a 6 GiB VM; anything below 7.7 GiB is untested.
+Before the lite trimming (API-server metrics scraping off), Prometheus on `acme-prod` was OOM-killed.
+
+Advanced: `FLEET_FLUX_GITHUB=owner/repo` (with `GITHUB_TOKEN`) makes `make up` bootstrap the
+management cluster's Flux from GitHub instead of the offline git server. It bootstraps only the
+management cluster; workload clusters still sync from the offline git server.
 
 ### Profiles
 
 | Profile | Clusters | Docker memory | Notes |
 |---|---|---|---|
 | `full` (default) | acme and globex x dev and prod = 4 | at least 12 GiB | |
-| `lite` | acme x dev and prod = 2 | at least 6 GiB | API-server metrics scraping disabled so Prometheus fits |
+| `lite` | acme x dev and prod = 2 | 6 GiB floor in preflight (untested; 7.7 GiB verified) | API-server metrics scraping disabled so Prometheus fits |
 
 ## Repository layout
 
@@ -70,12 +77,14 @@ Measured on a 7.7 GiB Docker Desktop with the lite profile: `make up` about 7 to
 
 ## How promotion works
 
-1. A chart version is released (`release.yml`, tag `chart-v*`) and the dev pin
-   `promotion/versions/dev.yaml` is bumped by PR. After merge, the `*-dev` clusters pick it up.
+1. A chart version is released (`release.yml`, tag `chart-v*`). Bumping the dev pin
+   `promotion/versions/dev.yaml` is a manual PR; `release.yml` does not do it. After merge, the
+   `*-dev` clusters pick it up.
 2. `promote.yml` opens a PR copying the pin to `test.yaml`, then another from `test` to `prod`
    (`scripts/promote.sh <from> <to>` does the copy). Each PR needs the `validate.yml` checks and
    review; the job that opens it runs in the `test` or `prod` GitHub Environment, which has
-   required reviewers.
+   required reviewers. PRs opened with `GITHUB_TOKEN` do not run `validate.yml`; see
+   [.github/README.md](.github/README.md) for the workaround.
 3. There are no `*-test` clusters in 1a, so the `test` pin is a staging gate that no cluster reads yet.
 4. A pin sets the `HelmRelease` image tag (and the chart version, which Flux ignores for charts from
    a Git source), so image and chart move in lockstep.
@@ -126,7 +135,7 @@ None locally: everything runs in Docker. There is no cloud account or paid servi
 
 ## Demo recording
 
-TODO (Task 12): link to the recorded demo.
+Recorded demo: coming soon (link to be added).
 
 ## Decisions (ADRs)
 
