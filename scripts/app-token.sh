@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Mint a GitHub App installation token with openssl + curl (no third-party action).
+# Env: APP_ID, APP_PRIVATE_KEY (PEM), REPO (owner/name). Prints the token on stdout.
+# Used by promote.yml only when the repository variable USE_APP_TOKEN is 'true'.
+set -euo pipefail
+
+: "${APP_ID:?APP_ID is required}" "${APP_PRIVATE_KEY:?APP_PRIVATE_KEY is required}" "${REPO:?REPO is required}"
+
+b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
+now="$(date +%s)"
+header="$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)"
+payload="$(printf '{"iat":%s,"exp":%s,"iss":"%s"}' "$((now - 60))" "$((now + 540))" "$APP_ID" | b64url)"
+key="$(mktemp)"
+trap 'rm -f "$key"' EXIT
+printf '%s\n' "$APP_PRIVATE_KEY" > "$key"
+sig="$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -sign "$key" | b64url)"
+jwt="$header.$payload.$sig"
+
+api="${GITHUB_API_URL:-https://api.github.com}"
+auth=(-H "Authorization: Bearer $jwt" -H "Accept: application/vnd.github+json")
+inst="$(curl -fsSL "${auth[@]}" "$api/repos/$REPO/installation" | sed -n 's/.*"id": *\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+[ -n "$inst" ] || { echo "app-token: could not find an installation for $REPO" >&2; exit 1; }
+curl -fsSL -X POST "${auth[@]}" "$api/app/installations/$inst/access_tokens" | sed -n 's/.*"token": *"\([^"]*\)".*/\1/p' | head -n 1

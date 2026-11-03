@@ -3,7 +3,9 @@
 # "Require review from Code Owners". Until then GitHub treats these rules as invalid and nobody is
 # notified.
 
-# Platform paths
+# Default and platform paths (the catch-all covers /Makefile, /versions.env, /test/, /docs/ ...;
+# the last matching rule wins, so /apps/ below overrides it)
+* @OWNER
 /infrastructure/ @OWNER
 /clusters/ @OWNER
 /capi/ @OWNER

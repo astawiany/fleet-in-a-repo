@@ -64,7 +64,7 @@ call "$protection" --method PUT "repos/$repo/branches/$branch/protection"
 IFS=',' read -r -a logins <<< "$reviewers"
 for env in test prod; do
   entries=""
-  for l in "${logins[@]}"; do
+  for l in ${logins[@]+"${logins[@]}"}; do
     if [ "$dry" -eq 1 ]; then
       id="\"<id of $l: gh api users/$l --jq .id>\""
     else

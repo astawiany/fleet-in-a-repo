@@ -43,13 +43,58 @@ workflows() { ls "$WF"/*.yml; }
   [ "$n_pr" = "$n_guarded" ] || { echo "gh pr create steps: $n_pr, guarded: $n_guarded"; false; }
 }
 
-@test "promote.yml triggers on dev/test pins on main and maps them to the right promotion" {
+@test "promote.yml triggers on dev/test pins on main" {
   f="$WF/promote.yml"
   [ "$(yq '.on.push.branches[0]' "$f")" = "main" ]
   [ "$(yq '.on.push.paths | map(select(. == "promotion/versions/dev.yaml" or . == "promotion/versions/test.yaml")) | length' "$f")" = "2" ]
-  grep -q 'promote.sh' "$f"
   [[ "$(yq '.permissions' "$f")" == *"contents: write"* ]] || false
   [[ "$(yq '.permissions' "$f")" == *"pull-requests: write"* ]] || false
+}
+
+@test "promote.yml pairs dev->test and test->prod, each gated by its Environment" {
+  f="$WF/promote.yml"
+  [ "$(yq '.jobs."promote-test".environment' "$f")" = "test" ]
+  [ "$(yq '.jobs."promote-prod".environment' "$f")" = "prod" ]
+  [ "$(yq '.jobs."promote-test".env.FROM + ">" + .jobs."promote-test".env.TO' "$f")" = "dev>test" ]
+  [ "$(yq '.jobs."promote-prod".env.FROM + ">" + .jobs."promote-prod".env.TO' "$f")" = "test>prod" ]
+  [ "$(yq '.jobs."promote-test".needs' "$f")" = "detect" ]
+  [[ "$(yq '.jobs."promote-test".if' "$f")" == *"dev_changed"* ]] || false
+  [[ "$(yq '.jobs."promote-prod".if' "$f")" == *"test_changed"* ]] || false
+  grep -q 'promote.sh "\$FROM" "\$TO"' "$f"
+}
+
+@test "promote.yml is idempotent: stable branch, force-with-lease, existing PR updated, serialized per env" {
+  f="$WF/promote.yml"
+  for j in promote-test promote-prod; do
+    [ "$(yq ".jobs.\"$j\".concurrency.group" "$f")" = "$j" ]
+    [ "$(yq ".jobs.\"$j\".concurrency.\"cancel-in-progress\"" "$f")" = "false" ]
+  done
+  grep -q 'branch="promote/\$TO"' "$f"
+  grep -q 'git push --force-with-lease origin' "$f"
+  grep -q 'gh pr list --head' "$f"
+  grep -q 'gh pr edit' "$f"
+  # changed files are computed from the push's before SHA, with the all-zero first-push case handled
+  grep -q 'BEFORE: \${{ github.event.before }}' "$f"
+  grep -q '0000000000000000000000000000000000000000' "$f"
+  ! grep -q 'HEAD^' "$f"
+}
+
+@test "promote.yml offers an optional GitHub App token step without a new third-party action" {
+  f="$WF/promote.yml"
+  [ "$(yq '.jobs."promote-test".steps[] | select(.id == "app") | .if' "$f")" = "\${{ vars.USE_APP_TOKEN == 'true' }}" ]
+  grep -q 'scripts/app-token.sh' "$f"
+  [ -x "$ROOT/scripts/app-token.sh" ]
+  [ -f "$ROOT/.github/README.md" ]
+  grep -q 'Allow GitHub Actions to create and approve pull requests' "$ROOT/.github/README.md"
+  grep -q 'Allow GitHub Actions to create and approve pull requests' "$f"
+}
+
+@test "release.yml labels the image with its source repo and exposes the digest" {
+  f="$WF/release.yml"
+  grep -q 'org.opencontainers.image.source=https://github.com/' "$f"
+  [ "$(yq '.jobs.image.outputs.digest' "$f")" = '${{ steps.push.outputs.digest }}' ]
+  grep -q 'digest=\$digest" >> "\$GITHUB_OUTPUT"' "$f"
+  grep -q 'GITHUB_STEP_SUMMARY' "$f"
 }
 
 @test "every uses: is pinned to a commit SHA or an explicit version tag" {
@@ -97,6 +142,7 @@ workflows() { ls "$WF"/*.yml; }
     grep -Eq "^/$p/ +@" "$f" || { echo "no rule for /$p/"; false; }
   done
   grep -Eq '^/apps/ +@' "$f"
+  grep -Eq '^\* +@OWNER' "$f"
   grep -q '@OWNER' "$f"
   grep -qi 'replace' "$f"
   # the placeholder is the only owner token used
@@ -137,6 +183,12 @@ STUB
   [ "$status" -ne 0 ]
   [[ "$output" == *"--repo"* ]] || false
   [ ! -e "$WORK/gh.calls" ]
+}
+
+@test "protect-branch survives an empty reviewer list entry set (bash 3.2 set -u)" {
+  stub_gh
+  run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers ,
+  [[ "$output" != *"unbound variable"* ]] || false
 }
 
 @test "protect-branch requires reviewers (no hard-coded logins)" {
