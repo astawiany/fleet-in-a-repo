@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Apply branch protection on main and the test/prod GitHub Environments with required reviewers.
-# Usage: scripts/protect-branch.sh [--dry-run] --repo owner/name --reviewers login[,login...] [--branch main]
-#   --dry-run   print the exact gh api calls and execute nothing (--repo defaults to OWNER/REPO)
-#   --repo      required for a real run; there is no default and it never runs implicitly
-#   --reviewers comma-separated GitHub logins for the environments (or env PROTECT_REVIEWERS)
+# Usage: scripts/protect-branch.sh [--dry-run] --repo owner/name --reviewers login[,login...]
+#          [--branch main] [--approvals N] [--enforce-admins]
+#   --dry-run        print the exact gh api calls and execute nothing (--repo defaults to OWNER/REPO)
+#   --repo           required for a real run; there is no default and it never runs implicitly
+#   --reviewers      comma-separated GitHub logins for the environments (or env PROTECT_REVIEWERS)
+#   --approvals N    approving PR reviews required on the branch, 0-6 (default 1). With 1 or more,
+#                    code-owner review is required too. A solo owner cannot approve their own PR:
+#                    use 0 (the status checks still gate merges); see .github/README.md.
+#   --enforce-admins apply the rules to admins as well (default off, so an owner is never locked out)
 # Required status checks are the job ids of .github/workflows/validate.yml.
 set -euo pipefail
 
@@ -11,6 +16,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dry=0
 repo=""
 branch=main
+approvals=1
+enforce_admins=false
 reviewers="${PROTECT_REVIEWERS:-}"
 
 while [ $# -gt 0 ]; do
@@ -19,6 +26,8 @@ while [ $# -gt 0 ]; do
     --repo) [ $# -ge 2 ] || { echo "protect-branch: --repo needs owner/name" >&2; exit 2; }; repo="$2"; shift 2 ;;
     --reviewers) [ $# -ge 2 ] || { echo "protect-branch: --reviewers needs a value" >&2; exit 2; }; reviewers="$2"; shift 2 ;;
     --branch) [ $# -ge 2 ] || { echo "protect-branch: --branch needs a value" >&2; exit 2; }; branch="$2"; shift 2 ;;
+    --approvals) [ $# -ge 2 ] || { echo "protect-branch: --approvals needs a number" >&2; exit 2; }; approvals="$2"; shift 2 ;;
+    --enforce-admins) enforce_admins=true; shift ;;
     *) echo "protect-branch: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
@@ -31,6 +40,8 @@ if [ -z "$repo" ]; then
     exit 2
   fi
 fi
+[[ "$approvals" =~ ^[0-6]$ ]] || { echo "protect-branch: --approvals must be a number from 0 to 6 (got '$approvals')" >&2; exit 2; }
+if [ "$approvals" -ge 1 ]; then code_owners=true; else code_owners=false; fi
 [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "protect-branch: --repo must look like owner/name" >&2; exit 2; }
 [ -n "$reviewers" ] || { echo "protect-branch: reviewers are required (--reviewers a,b or PROTECT_REVIEWERS)" >&2; exit 2; }
 command -v yq > /dev/null 2>&1 || { echo "protect-branch: yq not found on PATH" >&2; exit 2; }
@@ -61,8 +72,8 @@ checks_json="$(yq -o=json -I=0 '[.jobs | keys | .[]]' "$ROOT/.github/workflows/v
 protection="$(cat << JSON
 {
   "required_status_checks": { "strict": true, "contexts": $checks_json },
-  "enforce_admins": true,
-  "required_pull_request_reviews": { "required_approving_review_count": 1, "require_code_owner_reviews": true, "dismiss_stale_reviews": true },
+  "enforce_admins": $enforce_admins,
+  "required_pull_request_reviews": { "required_approving_review_count": $approvals, "require_code_owner_reviews": $code_owners, "dismiss_stale_reviews": true },
   "restrictions": null
 }
 JSON

@@ -190,10 +190,34 @@ STUB
   [[ "$output" == *"repos/acme/fleet/environments/test"* ]] || false
   [[ "$output" == *"repos/acme/fleet/environments/prod"* ]] || false
   [[ "$output" == *"required_pull_request_reviews"* ]] || false
-  [[ "$output" == *'"enforce_admins": true'* ]] || false
+  # defaults: admins not enforced (a solo owner can still merge), one approving code-owner review
+  [[ "$output" == *'"enforce_admins": false'* ]] || false
+  [[ "$output" == *'"required_approving_review_count": 1'* ]] || false
+  [[ "$output" == *'"require_code_owner_reviews": true'* ]] || false
   # required checks are exactly the validate.yml job ids
   for j in lint validate test smoke; do [[ "$output" == *"\"$j\""* ]] || { echo "missing check $j"; false; }; done
   [[ "$output" == *"alice"* && "$output" == *"bob"* ]] || false
+}
+
+@test "protect-branch --approvals 0 and --enforce-admins (solo owner and strict team setups)" {
+  stub_gh
+  PATH="$WORK/bin:$PATH" run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers alice --approvals 0
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"required_approving_review_count": 0'* ]] || false
+  # code-owner review would need an approval the author cannot give: off with 0 approvals
+  [[ "$output" == *'"require_code_owner_reviews": false'* ]] || false
+  [[ "$output" == *'"enforce_admins": false'* ]] || false
+  PATH="$WORK/bin:$PATH" run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers alice --approvals 2 --enforce-admins
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"required_approving_review_count": 2'* ]] || false
+  [[ "$output" == *'"enforce_admins": true'* ]] || false
+  for bad in -1 x 7 ""; do
+    PATH="$WORK/bin:$PATH" run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers alice --approvals "$bad"
+    [ "$status" -eq 2 ] || { echo "accepted --approvals '$bad'"; false; }
+  done
+  [ ! -e "$WORK/gh.calls" ]
+  grep -qi 'solo' "$ROOT/.github/README.md"
+  grep -q -- '--approvals 0' "$ROOT/.github/README.md"
 }
 
 @test "protect-branch refuses to run for real without --repo, and never calls gh then" {
