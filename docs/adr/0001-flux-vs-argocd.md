@@ -51,7 +51,7 @@ Use Flux (pinned in `versions.env` as `FLUX_VERSION`). The deciding properties f
   Argo CD instance with credentials for many clusters) is the common topology, though one instance
   per cluster is possible. Argo CD can do per-cluster value injection via ApplicationSet
   generators, Helm parameters or plugins where Flux has `postBuild.substituteFrom` built in, and
-  orders with sync waves and hooks where Flux has `dependsOn` plus health gating. The tilt toward
+  orders per sync wave and per Application (waiting for health within a wave) where Flux expresses ordering as `dependsOn` between Kustomizations and HelmReleases, with `wait: true` health gating. The tilt toward
   Flux is a matter of fit and laptop footprint, not capability. For a team that wants a UI-first workflow it remains
   a sound choice.
 - **Plain CI-driven `kubectl apply`/`helm upgrade`.** Rejected: push-based, no drift correction.

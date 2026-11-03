@@ -38,7 +38,7 @@ containers.
 - **Profiles:** `FLEET_PROFILE=full` (default) is customers `acme` and `globex` x `dev`, `prod` =
   four clusters and needs at least 12 GiB for Docker. `lite` is `acme` x `dev`, `prod`
   (two clusters). The preflight floor is 6 GiB, but lite was only verified on a 7.7 GiB Docker VM
-  with about 1 GiB spare (container peak about 5.1 GiB, swap in use); below that is untested.
+  with about 1 GiB spare (the author's observation: container peak about 5.1 GiB, swap in use); below that is untested.
   It sets `KPS_SCRAPE_APISERVER=false` so Prometheus fits: before this, Prometheus on `acme-prod`
   was OOM-killed.
 

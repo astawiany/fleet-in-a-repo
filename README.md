@@ -45,9 +45,9 @@ synced to the clusters (the offline git server serves git HEAD), so commit befor
 
 Measured on a 7.7 GiB Docker Desktop with the lite profile: `make up` about 7 to 8 minutes
 (after the first image pulls), `make smoke` about 1.5 minutes, 12/12 checks PASS.
-That run left only about 1 GiB of the VM spare (container peak about 5.1 GiB, swap in use). The
+The author's observation from those runs (not a guarantee): only about 1 GiB of the VM was spare (container peak about 5.1 GiB, swap in use). The
 preflight floor of 6 GiB for lite was never run on a 6 GiB VM; anything below 7.7 GiB is untested.
-Before the lite trimming (API-server metrics scraping off), Prometheus on `acme-prod` was OOM-killed.
+In an earlier run, before the lite trimming (API-server metrics scraping off), Prometheus on `acme-prod` was OOM-killed.
 
 Advanced: `FLEET_FLUX_GITHUB=owner/repo` (with `GITHUB_TOKEN`) makes `make up` bootstrap the
 management cluster's Flux from GitHub instead of the offline git server. It bootstraps only the
