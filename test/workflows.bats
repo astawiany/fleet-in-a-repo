@@ -112,7 +112,10 @@ workflows() { ls "$WF"/*.yml; }
 
 @test "release.yml labels the image with its source repo and exposes the digest" {
   f="$WF/release.yml"
-  grep -q 'org.opencontainers.image.source=https://github.com/' "$f"
+  # the source label (which links the GHCR package to the repo) comes from the SOURCE build arg
+  [ "$(yq '.jobs.image.env.SOURCE' "$f")" = 'https://github.com/${{ github.repository }}' ]
+  grep -q 'org.opencontainers.image.source="${SOURCE}"' "$ROOT/apps/demo/src/Dockerfile"
+  grep -q -- '--build-arg "SOURCE=$SOURCE"' "$ROOT/scripts/release.sh"
   [ "$(yq '.jobs.image.outputs.digest' "$f")" = '${{ steps.push.outputs.digest }}' ]
   grep -q 'digest=\$digest" >> "\$GITHUB_OUTPUT"' "$f"
   grep -q 'GITHUB_STEP_SUMMARY' "$f"
@@ -121,10 +124,12 @@ workflows() { ls "$WF"/*.yml; }
 @test "release.yml pushes the image the chart references (same basename as image.repository)" {
   f="$WF/release.yml"
   values="$ROOT/apps/demo/chart/values.yaml"
-  ref="$(grep -oE 'ref="ghcr\.io/\$\{owner\}/[a-z0-9._-]+:' "$f" | head -n 1)"
-  [ -n "$ref" ] || { echo "no ghcr.io/\${owner}/<name>: image ref in release.yml"; false; }
+  ref="$(yq '.jobs.image.env.IMAGE' "$f")"
+  [[ "$ref" =~ ^ghcr\.io/\$\{\{\ needs\.verify\.outputs\.owner\ \}\}/[a-z0-9._-]+$ ]] \
+    || { echo "image job IMAGE is not ghcr.io/<lowercased owner>/<name>: $ref"; false; }
   released="${ref##*/}"
-  released="${released%:}"
+  # the verify job checks that same name is not published yet
+  grep -q "check-absent \"ghcr.io/\${owner}/$released:\${version}\"" "$f"
   repo="$(yq '.image.repository' "$values")"
   echo "release: $released, chart: $repo"
   [ "$released" = "${repo##*/}" ] || false
@@ -147,10 +152,14 @@ workflows() { ls "$WF"/*.yml; }
   done <<< "$refs"
 }
 
-@test "permissions are declared at workflow level on every workflow" {
+@test "permissions are declared at workflow level on every workflow (empty only if every job declares its own)" {
   [ "$(workflows | wc -l | tr -d ' ')" -ge 3 ]
   for f in $(workflows); do
-    [ "$(yq '.permissions | length' "$f")" -ge 1 ] || { echo "no permissions in $f"; false; }
+    [ "$(yq 'has("permissions")' "$f")" = "true" ] || { echo "no workflow-level permissions in $f"; false; }
+    if [ "$(yq '.permissions | length' "$f")" = "0" ]; then
+      [ "$(yq '[.jobs[] | select(has("permissions") | not)] | length' "$f")" = "0" ] \
+        || { echo "$f: permissions: {} but a job has no permissions block"; false; }
+    fi
   done
 }
 
@@ -176,7 +185,9 @@ workflows() { ls "$WF"/*.yml; }
 @test "release.yml triggers on chart-v* tags and pushes the chart and image to ghcr" {
   f="$WF/release.yml"
   [ "$(yq '.on.push.tags[0]' "$f")" = "chart-v*" ]
-  [ "$(yq '.permissions.packages' "$f")" = "write" ]
+  # packages: write only on the two publishing jobs, never workflow-wide
+  [ "$(yq '.permissions.packages' "$f")" = "null" ]
+  [ "$(yq '[.jobs[] | select(.permissions.packages == "write")] | length' "$f")" = "2" ]
   grep -q 'helm package apps/demo/chart' "$f"
   grep -q 'helm push' "$f"
   grep -q 'oci://ghcr.io/' "$f"

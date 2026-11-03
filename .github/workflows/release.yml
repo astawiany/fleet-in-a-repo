@@ -1,63 +1,192 @@
-# Release: on a chart-v* tag, publish the demo Helm chart and the app image to ghcr.io.
-# Auth is GITHUB_TOKEN with packages: write.
+# Release: on a chart-vX.Y.Z tag cut from main, publish the demo app image and Helm chart to ghcr.io.
+#   verify: tag format, tagged commit is on main, version not yet in the registry (never overwrite)
+#   image:  build, scan (trivy, govulncheck) BEFORE pushing, push with SBOM + provenance, check the
+#           pushed image is the scanned one, sign the digest with cosign (keyless), verify
+#   chart:  package with image.digest pinned to that digest, push, sign the chart digest, verify
+# image and chart run in the `release` Environment: a reviewer approves each before it starts.
+# Auth is GITHUB_TOKEN only; permissions are granted per job. Consumers: docs/security.md.
 name: release
 
 on:
   push:
     tags: ['chart-v*']
 
-permissions:
-  contents: read
-  packages: write
+permissions: {}
+
+# One release at a time; a second tag waits instead of racing the registry check.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  chart:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # read-only registry access: GHCR packages are private until made public, so an anonymous
+      # lookup cannot tell "not published" from "not allowed"
+      packages: read
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      owner: ${{ steps.check.outputs.owner }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Install helm
-        run: |
-          scripts/ci-install-tools.sh helm
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Package and push chart
+        with:
+          # full history and all branches: the tagged commit must be an ancestor of origin/main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Tag format, released from main, version not yet published
+        id: check
         env:
           GH_ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
+          version="$(scripts/release.sh check-tag "$TAG")"
+          scripts/release.sh check-ancestor "refs/tags/$TAG" origin/main
           owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
-          version="${TAG#chart-v}"
-          echo "$GH_TOKEN" | helm registry login ghcr.io --username "$GH_ACTOR" --password-stdin
-          # The repo default is a non-pullable placeholder for the offline flow; publish the real image name.
-          OWNER="$owner" VERSION="$version" yq -i \
-            '.image.repository = "ghcr.io/" + strenv(OWNER) + "/fleet-demo" | .image.tag = strenv(VERSION)' \
-            apps/demo/chart/values.yaml
-          helm package apps/demo/chart --version "$version" --destination "$RUNNER_TEMP"
-          helm push "$RUNNER_TEMP/demo-${version}.tgz" "oci://ghcr.io/${owner}/charts"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          scripts/release.sh check-absent "ghcr.io/${owner}/fleet-demo:${version}"
+          scripts/release.sh check-absent "ghcr.io/${owner}/charts/demo:${version}"
+          docker logout ghcr.io
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
 
   image:
+    needs: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write  # keyless cosign signing (Sigstore Fulcio certificate from the GitHub OIDC token)
     outputs:
       digest: ${{ steps.push.outputs.digest }}
+      ref: ${{ steps.push.outputs.ref }}
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      IMAGE: ghcr.io/${{ needs.verify.outputs.owner }}/fleet-demo
+      SOURCE: https://github.com/${{ github.repository }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Build and push image, record digest
+        with:
+          persist-credentials: false
+      - name: Install tools
+        run: |
+          scripts/ci-install-tools.sh cosign trivy
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Build settings and buildx builder (pinned BuildKit)
+        run: |
+          # shellcheck disable=SC1091
+          source versions.env
+          {
+            echo "REVISION=$(git rev-parse HEAD)"
+            # fixed timestamps: the scan build and the push build produce the same image config
+            echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD)"
+            echo "BUILDER=release"
+          } >> "$GITHUB_ENV"
+          # attestations (SBOM, provenance) need the docker-container driver
+          docker buildx create --name release --driver docker-container --driver-opt "image=$BUILDKIT_IMAGE"
+          docker buildx inspect --bootstrap release
+      - name: Build for scanning (same Dockerfile, context and build args as the push)
+        run: scripts/release.sh build --load -t fleet-demo:scan
+      - name: Security gate (fails before anything is pushed)
+        run: scripts/security-scan.sh fleet-demo:scan
+      - name: Push with SBOM and provenance, record digest
         id: push
         env:
           GH_ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
         run: |
-          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
-          # same image name as apps/demo/chart/values.yaml image.repository (owner placeholder aside)
-          ref="ghcr.io/${owner}/fleet-demo:${TAG#chart-v}"
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
-          docker build --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" -t "$ref" apps/demo/src
-          docker push "$ref"
-          digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$ref")"
-          echo "pushed digest: $digest"
+          scripts/release.sh build --push --provenance=mode=max --sbom=true \
+            --metadata-file "$RUNNER_TEMP/image-metadata.json" -t "$IMAGE:$VERSION"
+          digest="$(scripts/release.sh image-digest "$RUNNER_TEMP/image-metadata.json")"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          echo "### Image digest" >> "$GITHUB_STEP_SUMMARY"
-          echo "\`$digest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "ref=$IMAGE@$digest" >> "$GITHUB_OUTPUT"
+      - name: The pushed image is the scanned image
+        env:
+          REF: ${{ steps.push.outputs.ref }}
+        run: scripts/release.sh assert-scanned fleet-demo:scan "$REF"
+      - name: Sign by digest and verify
+        env:
+          REF: ${{ steps.push.outputs.ref }}
+        run: |
+          cosign sign --yes "$REF"
+          cosign verify "$REF" \
+            --certificate-identity-regexp "$(scripts/release.sh identity-regexp "$GITHUB_REPOSITORY")" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          echo "verified signature of $REF"
+      - name: Summary
+        env:
+          REF: ${{ steps.push.outputs.ref }}
+        run: |
+          {
+            echo "### Image"
+            echo "\`$REF\` (tag \`$VERSION\`): scanned, SBOM + provenance attached, signed and verified"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  chart:
+    needs: [verify, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write  # keyless cosign signing
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      ref: ${{ steps.push.outputs.ref }}
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      OWNER: ${{ needs.verify.outputs.owner }}
+      IMAGE_DIGEST: ${{ needs.image.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install tools
+        run: |
+          scripts/ci-install-tools.sh helm yq cosign
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Package (image pinned by digest) and push chart, record digest
+        id: push
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The repo default is a non-pullable placeholder for the offline flow; publish the real image
+          # name, pinned to the digest the image job pushed, scanned and signed.
+          yq -i '.image.repository = "ghcr.io/" + strenv(OWNER) + "/fleet-demo" | .image.tag = strenv(VERSION) | .image.digest = strenv(IMAGE_DIGEST)' \
+            apps/demo/chart/values.yaml
+          helm template demo apps/demo/chart > "$RUNNER_TEMP/rendered.yaml"
+          grep -qF "image: \"ghcr.io/${OWNER}/fleet-demo@${IMAGE_DIGEST}\"" "$RUNNER_TEMP/rendered.yaml" \
+            || { echo "packaged chart does not pin the image digest" >&2; exit 1; }
+          helm package apps/demo/chart --version "$VERSION" --app-version "$VERSION" --destination "$RUNNER_TEMP"
+          echo "$GH_TOKEN" | helm registry login ghcr.io --username "$GH_ACTOR" --password-stdin
+          # cosign reads the docker credential store
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          helm push "$RUNNER_TEMP/demo-${VERSION}.tgz" "oci://ghcr.io/${OWNER}/charts" 2>&1 | tee "$RUNNER_TEMP/helm-push.txt"
+          digest="$(scripts/release.sh helm-digest "$RUNNER_TEMP/helm-push.txt")"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "ref=ghcr.io/${OWNER}/charts/demo@$digest" >> "$GITHUB_OUTPUT"
+      - name: Sign by digest and verify
+        env:
+          REF: ${{ steps.push.outputs.ref }}
+        run: |
+          cosign sign --yes "$REF"
+          cosign verify "$REF" \
+            --certificate-identity-regexp "$(scripts/release.sh identity-regexp "$GITHUB_REPOSITORY")" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          echo "verified signature of $REF"
+      - name: Summary
+        env:
+          REF: ${{ steps.push.outputs.ref }}
+        run: |
+          {
+            echo "### Chart"
+            echo "\`$REF\` (version \`$VERSION\`): image pinned to \`$IMAGE_DIGEST\`, signed and verified"
+          } >> "$GITHUB_STEP_SUMMARY"

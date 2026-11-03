@@ -1,6 +1,7 @@
 # Pull-request gate: lint, manifest validation, bats tests, then a lite kind/CAPD smoke run.
 # Job ids (lint, validate, test, smoke) are the required status checks that
-# scripts/protect-branch.sh configures; rename them there too.
+# scripts/protect-branch.sh configures; rename them there too. The security job is deliberately
+# not required (see OPTIONAL_JOBS in scripts/protect-branch.sh).
 #
 # Note: PRs opened by promote.yml with GITHUB_TOKEN do not trigger this workflow (GitHub does not
 # start workflows from events caused by GITHUB_TOKEN). Close and reopen such a PR (or push an
@@ -57,6 +58,24 @@ jobs:
           sudo apt-get install -y bats
       # test/observability.bats uses promtool from PATH, else docker with the pinned PROMTOOL_IMAGE.
       - run: make test
+
+  # Not a required check: scripts/protect-branch.sh leaves it out of the branch protection contexts,
+  # because it downloads the Trivy and Go vulnerability databases at run time and an upstream outage
+  # or a newly published CVE must not block unrelated merges. release.yml runs the same gate as a
+  # hard stop before anything is published.
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install tools
+        run: |
+          scripts/ci-install-tools.sh cosign trivy
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Build the demo image and run the security gate
+        run: |
+          docker build -t fleet-demo:ci apps/demo/src
+          scripts/security-scan.sh fleet-demo:ci
 
   smoke:
     needs: [lint, validate, test]
