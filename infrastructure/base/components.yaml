@@ -1,0 +1,125 @@
+# One Flux Kustomization per add-on. Each waits for its objects (HelmReleases included) to be
+# healthy, so `dependsOn` gives a real ordering and the parent `infrastructure` Kustomization
+# (wait: true) turns Ready only when every component is.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: cert-manager
+  namespace: flux-system
+spec:
+  interval: 30m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./infrastructure/base/cert-manager
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-vars
+---
+# Gateway API standard-channel CRDs, straight from the upstream repo at GATEWAY_API_VERSION
+# (config/crd = the release's standard-install.yaml). Source: gateway-api-crds/.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gateway-api-crds
+  namespace: flux-system
+spec:
+  interval: 30m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./config/crd  # no postBuild: upstream manifests are applied verbatim
+  prune: false  # never delete CRDs (and with them every Gateway/HTTPRoute) on a refactor
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: gateway-api
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: nginx-gateway-fabric
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: gateway-api-crds
+  interval: 30m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./infrastructure/base/nginx-gateway-fabric
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-vars
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: metallb
+  namespace: flux-system
+spec:
+  interval: 30m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./infrastructure/base/metallb
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-vars
+---
+# IPAddressPool/L2Advertisement need MetalLB's CRDs and webhook, hence the separate step.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: metallb-pool
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: metallb
+  interval: 30m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./infrastructure/base/metallb/pool
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-vars
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring
+  namespace: flux-system
+spec:
+  interval: 30m
+  retryInterval: 1m
+  timeout: 15m
+  path: ./infrastructure/base/monitoring
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-vars

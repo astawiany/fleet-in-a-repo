@@ -1,0 +1,20 @@
+# Per-cluster LoadBalancer addresses: METALLB_POOL is a /28 slice of the kind Docker network,
+# computed by scripts/metallb-pool.sh and stored in ConfigMap flux-system/cluster-vars by
+# scripts/sync-workloads.sh. L2 mode: the node answers ARP for the address on that network.
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: kind
+  namespace: metallb-system
+spec:
+  addresses:
+    - ${METALLB_POOL}
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: kind
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - kind

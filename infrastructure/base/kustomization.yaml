@@ -1,0 +1,8 @@
+# Platform add-ons of every workload cluster, wired as one Flux Kustomization per component
+# (components.yaml). Applied by the cluster's `infrastructure` Kustomization through
+# infrastructure/overlays/<env>, which substitutes placeholders from ConfigMap flux-system/cluster-vars.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - gateway-api-crds
+  - components.yaml

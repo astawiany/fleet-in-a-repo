@@ -1,0 +1,4 @@
+# Placeholder so the apps Kustomization of globex-prod reconciles; Task 7 adds the demo HelmRelease.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: []

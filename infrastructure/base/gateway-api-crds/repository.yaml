@@ -1,0 +1,15 @@
+# Upstream Gateway API repo at the release tag; only config/crd is fetched. GATEWAY_API_VERSION
+# must match the NGINX Gateway Fabric release (see versions.env).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: gateway-api
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://github.com/kubernetes-sigs/gateway-api
+  ref:
+    tag: v${GATEWAY_API_VERSION}
+  ignore: |
+    /*
+    !/config/crd/

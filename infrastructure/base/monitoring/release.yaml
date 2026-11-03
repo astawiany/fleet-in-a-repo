@@ -1,0 +1,81 @@
+# Prometheus + Grafana sized for a laptop: no Alertmanager, no node-exporter (kubelet/cAdvisor
+# and kube-state-metrics cover node/pod capacity), no scraping of control-plane components that
+# kind binds to localhost. Prometheus selects every ServiceMonitor/PodMonitor/PrometheusRule in
+# the cluster (not only this release's); Grafana's sidecar loads dashboards from ConfigMaps
+# labeled grafana_dashboard: "1". Retention: PROMETHEUS_RETENTION from the env overlay.
+apiVersion: helm.toolkit.fluxcd.io/v2beta2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 30m
+  timeout: 10m
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: "${KPS_VERSION}"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    fullnameOverride: kps
+    alertmanager:
+      enabled: false
+    nodeExporter:
+      enabled: false
+    kubeEtcd:
+      enabled: false
+    kubeControllerManager:
+      enabled: false
+    kubeScheduler:
+      enabled: false
+    kubeProxy:
+      enabled: false
+    defaultRules:
+      rules:
+        alertmanager: false
+        etcd: false
+        kubeControllerManager: false
+        kubeProxy: false
+        kubeSchedulerAlerting: false
+        kubeSchedulerRecording: false
+        nodeExporterAlerting: false
+        nodeExporterRecording: false
+        windows: false
+    prometheusOperator:
+      resources:
+        requests: {cpu: 10m, memory: 48Mi}
+        limits: {memory: 192Mi}
+    prometheus:
+      prometheusSpec:
+        retention: ${PROMETHEUS_RETENTION:=12h}
+        scrapeInterval: 30s
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+        ruleSelectorNilUsesHelmValues: false
+        resources:
+          requests: {cpu: 50m, memory: 256Mi}
+          limits: {memory: 768Mi}
+    kube-state-metrics:
+      resources:
+        requests: {cpu: 10m, memory: 32Mi}
+        limits: {memory: 128Mi}
+    grafana:
+      sidecar:
+        dashboards:
+          enabled: true
+          label: grafana_dashboard
+          labelValue: "1"
+          searchNamespace: ALL
+      resources:
+        requests: {cpu: 10m, memory: 96Mi}
+        limits: {memory: 256Mi}

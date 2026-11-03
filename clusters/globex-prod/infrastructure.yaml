@@ -1,0 +1,21 @@
+# Platform add-ons for a prod cluster. Placeholders (add-on versions, METALLB_POOL) come from
+# ConfigMap flux-system/cluster-vars, created by scripts/sync-workloads.sh.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infrastructure
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/overlays/prod
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-vars

@@ -1,0 +1,26 @@
+# Sync objects, first applied by scripts/sync-workloads.sh (kubectl apply -k), then kept in
+# sync by Flux itself. Source: the offline git server fleet-git on the kind Docker network,
+# fed by scripts/mgmt-up.sh with the committed HEAD.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: flux-system
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: http://fleet-git/cgi-bin/git/fleet.git
+  ref:
+    branch: main
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flux-system
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./clusters/globex-dev
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system

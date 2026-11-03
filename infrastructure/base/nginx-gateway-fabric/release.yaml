@@ -1,0 +1,41 @@
+# NGINX Gateway Fabric control plane. The chart ships NGF's own CRDs (gateway.nginx.org) in crds/
+# and the GatewayClass `nginx`; the Gateway API CRDs come from the gateway-api-crds Kustomization.
+# For each Gateway, NGF provisions an NGINX data-plane Deployment and a LoadBalancer Service
+# (address from MetalLB) in the Gateway's namespace.
+apiVersion: helm.toolkit.fluxcd.io/v2beta2
+kind: HelmRelease
+metadata:
+  name: nginx-gateway-fabric
+  namespace: nginx-gateway
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: nginx-gateway-fabric
+      version: "${NGF_VERSION}"
+      sourceRef:
+        kind: HelmRepository
+        name: nginx
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    nginxGateway:
+      gatewayClassName: nginx
+      productTelemetry:
+        enable: false
+      resources:
+        requests: {cpu: 10m, memory: 48Mi}
+        limits: {memory: 192Mi}
+    nginx:
+      service:
+        type: LoadBalancer
+      container:
+        resources:
+          requests: {cpu: 10m, memory: 32Mi}
+          limits: {memory: 128Mi}

@@ -93,7 +93,6 @@ validate_cluster_name() {
 }
 
 @test "validate passes on the repo" {
-  skip "enabled in Task 6"
   run "$ROOT/scripts/validate.sh"
   [ "$status" -eq 0 ]
 }

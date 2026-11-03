@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nginx-gateway
+---
+# The demo app's namespace: the only one whose routes fleet-gateway admits.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo

@@ -1,0 +1,14 @@
+# Platform add-ons for dev clusters: the shared base plus dev-specific substitutions.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - target:
+      kind: Kustomization
+      name: monitoring
+    patch: |-
+      - op: add
+        path: /spec/postBuild/substitute
+        value:
+          PROMETHEUS_RETENTION: 6h
