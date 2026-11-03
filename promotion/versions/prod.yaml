@@ -1,0 +1,8 @@
+# Promotion pin for the prod environment; read by apps/demo/flux/*-prod via a Kustomize replacement.
+# Kind is a repo-local marker (never applied: the flux overlays delete it after the replacement).
+apiVersion: fleet.example/v1
+kind: PromotionPin
+metadata:
+  name: pin-prod
+chart:
+  version: 0.1.0

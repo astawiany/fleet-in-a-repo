@@ -1,6 +1,27 @@
-# Placeholder so the apps Kustomization of globex-dev reconciles; Task 7 replaces it with the demo
-# HelmRelease. (Flux rejects a kustomization.yaml without resources.)
+# Demo app delivery for globex-dev (Flux path of the apps Kustomization). The inner layer, release/,
+# builds the HelmRelease, values ConfigMaps and promotion pins and applies the version replacement;
+# this layer then drops everything that is not the HelmRelease or this cluster's values, because
+# kustomize runs patches before replacements within one layer.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - placeholder.yaml
+  - release
+patches:
+  # only this env's pin and values are used; drop the rest
+  - target:
+      kind: PromotionPin
+    patch: |-
+      $patch: delete
+      apiVersion: fleet.example/v1
+      kind: PromotionPin
+      metadata:
+        name: ignored
+  - target:
+      kind: ConfigMap
+      name: "demo-values-acme-dev|demo-values-acme-prod|demo-values-globex-prod"
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: ignored

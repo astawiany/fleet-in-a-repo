@@ -1,0 +1,18 @@
+# Inner layer for globex-dev: HelmRelease + values ConfigMap + chart version from the dev pin.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - helmrelease.yaml
+  - ../../../values
+  - ../../../../../promotion
+replacements:
+  - source:
+      kind: PromotionPin
+      name: pin-dev
+      fieldPath: chart.version
+    targets:
+      - select:
+          kind: HelmRelease
+          name: demo
+        fieldPaths:
+          - spec.chart.spec.version

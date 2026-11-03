@@ -97,6 +97,7 @@ fi
 if [ "$run_helm" -eq 1 ]; then
   for v in "$VALUES"/*.yaml; do
     [ -e "$v" ] || continue
+    [ "$(basename "$v")" = kustomization.yaml ] && continue
     if ! helm lint "$CHART" -f "$v" > "$work/lint.out" 2>&1; then
       cat "$work/lint.out" >&2
       fail "helm-lint" "$CHART with $v"

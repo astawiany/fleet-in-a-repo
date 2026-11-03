@@ -1,0 +1,7 @@
+# Lets overlays pull the pin files in as resources (kustomize cannot load files outside its root).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - versions/dev.yaml
+  - versions/test.yaml
+  - versions/prod.yaml

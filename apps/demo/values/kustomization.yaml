@@ -1,0 +1,19 @@
+# Per customer/env values as ConfigMaps (namespace flux-system, read by HelmRelease valuesFrom).
+# Lives here, not in , because kustomize cannot load files outside its root.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: demo-values-acme-dev
+    namespace: flux-system
+    files: [values.yaml=acme-dev.yaml]
+  - name: demo-values-acme-prod
+    namespace: flux-system
+    files: [values.yaml=acme-prod.yaml]
+  - name: demo-values-globex-dev
+    namespace: flux-system
+    files: [values.yaml=globex-dev.yaml]
+  - name: demo-values-globex-prod
+    namespace: flux-system
+    files: [values.yaml=globex-prod.yaml]
