@@ -1,0 +1,10 @@
+extends: default
+ignore: |
+  .superpowers/
+  .work/
+rules:
+  line-length:
+    max: 160
+  document-start: disable
+  truthy:
+    check-keys: false
