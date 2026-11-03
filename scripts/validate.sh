@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
 # Validate repo manifests: name rules, kustomize build + kubeconform, helm lint/template.
 # Usage: scripts/validate.sh [path...]   (no args = whole repo; the walk skips test/fixtures)
+# Network: kubeconform downloads JSON schemas from raw.githubusercontent.com on first use.
+# They are cached in ${XDG_CACHE_HOME:-$HOME/.cache}/fleet-in-a-repo/kubeconform, so later
+# runs work offline. The name rules need no network.
 set -uo pipefail
+
+for tool in kustomize kubeconform helm; do
+  if ! command -v "$tool" > /dev/null 2>&1; then
+    echo "FAIL [prereq]: '$tool' not found on PATH; install it (see scripts/preflight.sh)" >&2
+    exit 2
+  fi
+done
+KC_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/fleet-in-a-repo/kubeconform"
+mkdir -p "$KC_CACHE"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHART="$ROOT/apps/demo/chart"
@@ -29,13 +41,13 @@ failures=0
 fail() { echo "FAIL [$1]: $2" >&2; failures=$((failures + 1)); }
 
 check_name() { # kind name path
-  if [[ ! "$2" =~ $NAME_RE ]]; then
+  if ! printf '%s\n' "$2" | LC_ALL=C grep -Eq "$NAME_RE"; then
     fail "name-rule" "$1 name '$2' must match $NAME_RE ($3)"
   fi
 }
 
 kubeconform_check() { # label manifest-file
-  if ! kubeconform -strict -ignore-missing-schemas -summary < "$2" > "$work/kc.out" 2>&1; then
+  if ! kubeconform -strict -ignore-missing-schemas -cache "$KC_CACHE" -summary < "$2" > "$work/kc.out" 2>&1; then
     cat "$work/kc.out" >&2
     fail "kubeconform" "$1"
   fi
