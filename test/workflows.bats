@@ -89,6 +89,27 @@ workflows() { ls "$WF"/*.yml; }
   grep -q 'Allow GitHub Actions to create and approve pull requests' "$f"
 }
 
+@test "promote.yml pushes with the App token when configured (so validate.yml runs), GITHUB_TOKEN otherwise" {
+  f="$WF/promote.yml"
+  for j in promote-test promote-prod; do
+    step=".jobs.\"$j\".steps[] | select(.name == \"Open or update promotion PR\")"
+    [ "$(yq "$step | .env.APP_TOKEN" "$f")" = '${{ steps.app.outputs.token }}' ] || { echo "$j: no APP_TOKEN env"; false; }
+    body="$(yq "$step | .run" "$f")"
+    [[ "$body" == *'if [ -n "$APP_TOKEN" ]; then'* ]] || { echo "$j: no App-token branch"; false; }
+    # checkout's persisted GITHUB_TOKEN header is reset, the token goes in the URL from env
+    [[ "$body" == *'git -c http.https://github.com/.extraheader= push'* ]] || { echo "$j: extraheader not reset"; false; }
+    [[ "$body" == *'"https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"'* ]] || { echo "$j: no App URL"; false; }
+    # pushing to a URL has no remote-tracking ref: the lease names the fetched sha explicitly
+    [[ "$body" == *'lease="$(git rev-parse -q --verify "refs/remotes/origin/$branch" || true)"'* ]] || { echo "$j: no lease sha"; false; }
+    [[ "$body" == *'--force-with-lease="$branch:$lease"'* ]] || { echo "$j: no explicit lease"; false; }
+    # the GITHUB_TOKEN default path is unchanged
+    [[ "$body" == *'git push --force-with-lease origin "$branch"'* ]] || { echo "$j: default push changed"; false; }
+    # the token is never printed
+    run grep -cE 'echo[^|]*APP_TOKEN' <<< "$body"
+    [ "$output" -eq 0 ] || { echo "$j echoes the token"; false; }
+  done
+}
+
 @test "release.yml labels the image with its source repo and exposes the digest" {
   f="$WF/release.yml"
   grep -q 'org.opencontainers.image.source=https://github.com/' "$f"

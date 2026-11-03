@@ -27,6 +27,7 @@ self-review" option is enabled.
    - add secrets `APP_ID` and `APP_PRIVATE_KEY`, and the repository variable
      `USE_APP_TOKEN=true`.
    `promote.yml` then mints the token with `scripts/app-token.sh` (openssl + curl, no third-party
-   action) and uses it for `gh`, so the PR is opened by the App and the checks run.
+   action) and uses it for `gh` and for the push of `promote/<env>`, so the branch is updated and
+   the PR opened by the App and the checks run (also on later force-pushes to an open PR).
 3. Gating: PR review + `validate.yml` checks (branch protection), and Environment approval for the
    `test` / `prod` promote jobs.

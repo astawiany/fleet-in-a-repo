@@ -12,7 +12,8 @@
 # Limitation: PRs created with GITHUB_TOKEN do not trigger validate.yml, so the required checks stay
 # pending. Close and reopen the PR, or set the repository variable USE_APP_TOKEN=true with secrets
 # APP_ID and APP_PRIVATE_KEY of a GitHub App installed on this repo (scripts/app-token.sh
-# mints the token with openssl and curl); then the PR is created by the App and checks run.
+# mints the token with openssl and curl); then the App pushes the branch and creates the PR, and
+# the checks run.
 # See .github/README.md.
 name: promote
 
@@ -111,6 +112,7 @@ jobs:
         if: steps.promote.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
           SUMMARY: ${{ steps.promote.outputs.summary }}
         run: |
           branch="promote/$TO"
@@ -118,7 +120,17 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "promotion/versions/$TO.yaml"
           git commit -m "chore(promotion): $SUMMARY"
-          git push --force-with-lease origin "$branch"
+          if [ -n "$APP_TOKEN" ]; then
+            # Push as the App: a push with checkout's persisted GITHUB_TOKEN would not trigger
+            # validate.yml on the PR. The empty extraheader resets that persisted credential; a push
+            # to a URL has no remote-tracking ref, so the lease names the fetched sha (empty: the
+            # branch must not exist yet). The token is masked and never printed.
+            lease="$(git rev-parse -q --verify "refs/remotes/origin/$branch" || true)"
+            git -c http.https://github.com/.extraheader= push --force-with-lease="$branch:$lease" \
+              "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+          else
+            git push --force-with-lease origin "$branch"
+          fi
           body="Automated promotion from $FROM: $SUMMARY. Triggered by $GITHUB_SHA."
           if [ "$(gh pr list --head "$branch" --state open --json number --jq length)" -gt 0 ]; then
             gh pr edit "$branch" --title "Promote to $TO" --body "$body"
@@ -188,6 +200,7 @@ jobs:
         if: steps.promote.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
           SUMMARY: ${{ steps.promote.outputs.summary }}
         run: |
           branch="promote/$TO"
@@ -195,7 +208,17 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "promotion/versions/$TO.yaml"
           git commit -m "chore(promotion): $SUMMARY"
-          git push --force-with-lease origin "$branch"
+          if [ -n "$APP_TOKEN" ]; then
+            # Push as the App: a push with checkout's persisted GITHUB_TOKEN would not trigger
+            # validate.yml on the PR. The empty extraheader resets that persisted credential; a push
+            # to a URL has no remote-tracking ref, so the lease names the fetched sha (empty: the
+            # branch must not exist yet). The token is masked and never printed.
+            lease="$(git rev-parse -q --verify "refs/remotes/origin/$branch" || true)"
+            git -c http.https://github.com/.extraheader= push --force-with-lease="$branch:$lease" \
+              "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+          else
+            git push --force-with-lease origin "$branch"
+          fi
           body="Automated promotion from $FROM: $SUMMARY. Triggered by $GITHUB_SHA."
           if [ "$(gh pr list --head "$branch" --state open --json number --jq length)" -gt 0 ]; then
             gh pr edit "$branch" --title "Promote to $TO" --body "$body"
