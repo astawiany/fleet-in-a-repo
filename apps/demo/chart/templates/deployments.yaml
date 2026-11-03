@@ -17,6 +17,8 @@ spec:
       labels:
         {{- include "demo.labels" $ctx | nindent 8 }}
     spec:
+      # The demo never calls the Kubernetes API: no service account token in the pods.
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -25,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: demo
-          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          image: {{ include "demo.image" $ | quote }}
           args: ["--mode", {{ $component | quote }}]
           env:
             - name: FEATURE_NEW_BANNER
@@ -47,6 +49,8 @@ spec:
             {{- toYaml $.Values.resources | nindent 12 }}
           securityContext:
             runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:

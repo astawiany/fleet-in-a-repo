@@ -1,1 +1,7 @@
+# Allowlist: the build context is only the Go module sources. Everything else (.git, tests, docs,
+# .env files, keys, editor and OS files) never reaches the builder.
+*
+!go.mod
+!go.sum
+!*.go
 *_test.go

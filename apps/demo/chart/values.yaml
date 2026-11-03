@@ -11,6 +11,9 @@ image:
   # ghcr.io/<repository owner, lowercased>/fleet-demo when it packages the chart.
   repository: example.invalid/fleet-demo
   tag: 0.1.0
+  # Optional sha256:<64 hex>. When set the pods run <repository>@<digest> and tag is ignored.
+  # Empty for the offline flow; release.yml sets the digest of the image it just pushed.
+  digest: ""
 
 features:
   newBanner: false

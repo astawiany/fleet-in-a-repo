@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Install pinned CLI tools on a Linux amd64 CI runner into ${CI_BIN:-$HOME/.local/bin}.
-# Usage: scripts/ci-install-tools.sh <tool>...   (kind clusterctl flux helm kubectl kubeconform kustomize yq)
+# Usage: scripts/ci-install-tools.sh <tool>...
+#   (kind clusterctl flux helm kubectl kubeconform kustomize yq cosign trivy)
 # Versions come from versions.env. Every download is sha256-verified: against the checksum file the
 # project publishes next to the artifact, except clusterctl (upstream publishes none), which is
-# checked against CLUSTERCTL_SHA256_LINUX_AMD64 pinned in versions.env (trust on first use).
+# checked against CLUSTERCTL_SHA256_LINUX_AMD64 pinned in versions.env (trust on first use). cosign
+# must match both its checksum file and COSIGN_SHA256_LINUX_AMD64 pinned in versions.env.
+# trivy additionally needs cosign (install it first: `ci-install-tools.sh cosign trivy`): the trivy
+# checksum file's Sigstore signature is verified against trivy's release workflow identity, so a
+# tampered release whose checksum file was rewritten too is still refused.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -70,6 +75,27 @@ install_tool() {
       [ -n "$col" ] || { echo "ci-install-tools: no SHA-256 column in yq checksums_hashes_order" >&2; exit 1; }
       verify "$tmp/yq" "$(awk -v c="$((col + 1))" '$1 == "yq_linux_amd64" { print $c }' "$tmp/yq.sum")"
       install -m 0755 "$tmp/yq" "$BIN/yq" ;;
+    cosign)
+      b="https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}"
+      get "$b/cosign-linux-amd64" "$tmp/cosign"; get "$b/cosign_checksums.txt" "$tmp/cosign.sum"
+      # both the release checksum file and the sha256 pinned in versions.env must match
+      [ "$(grep " cosign-linux-amd64\$" "$tmp/cosign.sum" | cut -d' ' -f1)" = "${COSIGN_SHA256_LINUX_AMD64:-}" ] \
+        || { echo "ci-install-tools: cosign_checksums.txt disagrees with COSIGN_SHA256_LINUX_AMD64 in versions.env" >&2; exit 1; }
+      verify "$tmp/cosign" "$COSIGN_SHA256_LINUX_AMD64"
+      install -m 0755 "$tmp/cosign" "$BIN/cosign" ;;
+    trivy)
+      b="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+      t="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+      s="trivy_${TRIVY_VERSION}_checksums.txt"
+      cosign_bin="$(PATH="$BIN:$PATH" command -v cosign || true)"
+      [ -n "$cosign_bin" ] || { echo "ci-install-tools: trivy needs cosign to verify its checksum signature (install cosign first)" >&2; exit 1; }
+      get "$b/$t" "$tmp/$t"; get "$b/$s" "$tmp/trivy.sum"; get "$b/$s.sigstore.json" "$tmp/trivy.sum.bundle"
+      "$cosign_bin" verify-blob --bundle "$tmp/trivy.sum.bundle" \
+        --certificate-identity "https://github.com/aquasecurity/trivy/.github/workflows/reusable-release.yaml@refs/tags/v${TRIVY_VERSION}" \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com "$tmp/trivy.sum" > /dev/null \
+        || { echo "ci-install-tools: signature verification of $s failed" >&2; exit 1; }
+      verify "$tmp/$t" "$(grep " $t\$" "$tmp/trivy.sum" | cut -d' ' -f1)"
+      tar -xzf "$tmp/$t" -C "$tmp" trivy; install -m 0755 "$tmp/trivy" "$BIN/trivy" ;;
     *) echo "ci-install-tools: unknown tool '$1'" >&2; exit 1 ;;
   esac
   echo "ci-install-tools: installed $1"

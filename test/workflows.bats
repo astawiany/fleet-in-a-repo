@@ -112,7 +112,10 @@ workflows() { ls "$WF"/*.yml; }
 
 @test "release.yml labels the image with its source repo and exposes the digest" {
   f="$WF/release.yml"
-  grep -q 'org.opencontainers.image.source=https://github.com/' "$f"
+  # the source label (which links the GHCR package to the repo) comes from the SOURCE build arg
+  [ "$(yq '.jobs.image.env.SOURCE' "$f")" = 'https://github.com/${{ github.repository }}' ]
+  grep -q 'org.opencontainers.image.source="${SOURCE}"' "$ROOT/apps/demo/src/Dockerfile"
+  grep -q -- '--build-arg "SOURCE=$SOURCE"' "$ROOT/scripts/release.sh"
   [ "$(yq '.jobs.image.outputs.digest' "$f")" = '${{ steps.push.outputs.digest }}' ]
   grep -q 'digest=\$digest" >> "\$GITHUB_OUTPUT"' "$f"
   grep -q 'GITHUB_STEP_SUMMARY' "$f"
@@ -121,10 +124,12 @@ workflows() { ls "$WF"/*.yml; }
 @test "release.yml pushes the image the chart references (same basename as image.repository)" {
   f="$WF/release.yml"
   values="$ROOT/apps/demo/chart/values.yaml"
-  ref="$(grep -oE 'ref="ghcr\.io/\$\{owner\}/[a-z0-9._-]+:' "$f" | head -n 1)"
-  [ -n "$ref" ] || { echo "no ghcr.io/\${owner}/<name>: image ref in release.yml"; false; }
+  ref="$(yq '.jobs.image.env.IMAGE' "$f")"
+  [[ "$ref" =~ ^ghcr\.io/\$\{\{\ needs\.verify\.outputs\.owner\ \}\}/[a-z0-9._-]+$ ]] \
+    || { echo "image job IMAGE is not ghcr.io/<lowercased owner>/<name>: $ref"; false; }
   released="${ref##*/}"
-  released="${released%:}"
+  # the verify job checks that same name is not published yet
+  grep -q "check-absent \"ghcr.io/\${owner}/$released:\${version}\"" "$f"
   repo="$(yq '.image.repository' "$values")"
   echo "release: $released, chart: $repo"
   [ "$released" = "${repo##*/}" ] || false
@@ -147,10 +152,14 @@ workflows() { ls "$WF"/*.yml; }
   done <<< "$refs"
 }
 
-@test "permissions are declared at workflow level on every workflow" {
+@test "permissions are declared at workflow level on every workflow (empty only if every job declares its own)" {
   [ "$(workflows | wc -l | tr -d ' ')" -ge 3 ]
   for f in $(workflows); do
-    [ "$(yq '.permissions | length' "$f")" -ge 1 ] || { echo "no permissions in $f"; false; }
+    [ "$(yq 'has("permissions")' "$f")" = "true" ] || { echo "no workflow-level permissions in $f"; false; }
+    if [ "$(yq '.permissions | length' "$f")" = "0" ]; then
+      [ "$(yq '[.jobs[] | select(has("permissions") | not)] | length' "$f")" = "0" ] \
+        || { echo "$f: permissions: {} but a job has no permissions block"; false; }
+    fi
   done
 }
 
@@ -176,7 +185,9 @@ workflows() { ls "$WF"/*.yml; }
 @test "release.yml triggers on chart-v* tags and pushes the chart and image to ghcr" {
   f="$WF/release.yml"
   [ "$(yq '.on.push.tags[0]' "$f")" = "chart-v*" ]
-  [ "$(yq '.permissions.packages' "$f")" = "write" ]
+  # packages: write only on the two publishing jobs, never workflow-wide
+  [ "$(yq '.permissions.packages' "$f")" = "null" ]
+  [ "$(yq '[.jobs[] | select(.permissions.packages == "write")] | length' "$f")" = "2" ]
   grep -q 'helm package apps/demo/chart' "$f"
   grep -q 'helm push' "$f"
   grep -q 'oci://ghcr.io/' "$f"
@@ -221,9 +232,33 @@ STUB
   [[ "$output" == *'"enforce_admins": false'* ]] || false
   [[ "$output" == *'"required_approving_review_count": 1'* ]] || false
   [[ "$output" == *'"require_code_owner_reviews": true'* ]] || false
-  # required checks are exactly the validate.yml job ids
+  # required checks are exactly the validate.yml job ids, minus the optional security job
   for j in lint validate test smoke; do [[ "$output" == *"\"$j\""* ]] || { echo "missing check $j"; false; }; done
+  [[ "$output" == *'"contexts": ["lint","validate","test","smoke"]'* ]] || { echo "$output" | grep contexts; false; }
   [[ "$output" == *"alice"* && "$output" == *"bob"* ]] || false
+  # the release Environment: same reviewers, deployments only from chart-v* tags
+  [[ "$output" == *"gh api --method PUT repos/acme/fleet/environments/release"* ]] || false
+  [ "$(printf '%s\n' "$output" | grep -c '"<id of alice: gh api users/alice --jq .id>"')" = "3" ]
+  [[ "$output" == *'"deployment_branch_policy": { "protected_branches": false, "custom_branch_policies": true }'* ]] || false
+  [[ "$output" == *"gh api --method POST repos/acme/fleet/environments/release/deployment-branch-policies"* ]] || false
+  [[ "$output" == *'{ "name": "chart-v*", "type": "tag" }'* ]] || false
+  # the chart-v* tag ruleset is part of the default run
+  [[ "$output" == *"gh api --method POST repos/acme/fleet/rulesets"* ]] || false
+}
+
+@test "protect-branch prints the chart-v* tag ruleset (admins only) by default, dry-run never calls gh" {
+  stub_gh
+  PATH="$WORK/bin:$PATH" run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers alice
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"WARNING"* ]] || false
+  [ ! -e "$WORK/gh.calls" ] || { cat "$WORK/gh.calls"; false; }
+  [[ "$output" == *"gh api --method POST repos/acme/fleet/rulesets --input -"* ]] || false
+  body="$(printf '%s\n' "$output" | sed -n '/repos\/acme\/fleet\/rulesets --input/,/^JSON$/p' | sed '1d;$d')"
+  [ "$(echo "$body" | yq -p=json '.target')" = "tag" ]
+  [ "$(echo "$body" | yq -p=json '.enforcement')" = "active" ]
+  [ "$(echo "$body" | yq -p=json '.conditions.ref_name.include | join(",")')" = "refs/tags/chart-v*" ]
+  [ "$(echo "$body" | yq -p=json '[.rules[].type] | sort | join(",")')" = "creation,deletion,update" ]
+  [ "$(echo "$body" | yq -p=json -o=json -I=0 '.bypass_actors')" = '[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"always"}]' ]
 }
 
 @test "protect-branch --approvals 0 and --enforce-admins (solo owner and strict team setups)" {
@@ -260,10 +295,11 @@ STUB
   run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers ", ,"
   [ "$status" -eq 2 ]
   [[ "$output" == *"no valid reviewers"* ]] || false
-  # blank entries between real ones are dropped: two reviewers per environment, none unresolved
+  # blank entries between real ones are dropped: two reviewers per environment (test, prod,
+  # release), none unresolved
   run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers "alice,,bob"
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | grep -o '"type": "User"' | wc -l | tr -d ' ')" = "4" ]
+  [ "$(printf '%s\n' "$output" | grep -o '"type": "User"' | wc -l | tr -d ' ')" = "6" ]
   [[ "$output" != *"<id of :"* ]] || false
 }
 
@@ -280,6 +316,20 @@ STUB
   run env -u PROTECT_REVIEWERS PATH="$WORK/bin:$PATH" "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet
   [ "$status" -ne 0 ]
   [[ "$output" == *"reviewers"* ]] || false
+}
+
+@test "protect-branch --no-protect-tags skips the tag ruleset with a warning; --protect-tags is gone" {
+  stub_gh
+  PATH="$WORK/bin:$PATH" run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers alice --no-protect-tags
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"rulesets"* ]] || false
+  [[ "$output" == *"WARNING: --no-protect-tags"* ]] || false
+  # the rest is unchanged: branch protection and the release Environment are still applied
+  [[ "$output" == *"repos/acme/fleet/branches/main/protection"* ]] || false
+  [[ "$output" == *"repos/acme/fleet/environments/release"* ]] || false
+  PATH="$WORK/bin:$PATH" run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers alice --protect-tags
+  [ "$status" -eq 2 ]
+  [ ! -e "$WORK/gh.calls" ]
 }
 
 # --- Flux notifications (opt-in) ----------------------------------------------------------
