@@ -49,12 +49,12 @@ setup() {
   [[ "$n" -gt 5 ]] || { echo "only $n links checked"; false; }
 }
 
-@test "repo contains no occurrence of employer names" {
+@test "repo contains no employer names" {
   cd "$ROOT"
-  # This file is excluded (its title names the words) and the pattern is assembled from pieces; docs/superpowers and
+  # The pattern is assembled from pieces so this file does not match itself; docs/superpowers and
   # .superpowers (spec, plan, reports) legitimately name the employer as a constraint.
   pat="t""-mobile|te""lekom"
-  run grep -rIiE "$pat" . --exclude-dir=.git --exclude-dir=.work --exclude-dir=superpowers --exclude-dir=.superpowers --exclude=docs.bats
+  run grep -rIiE "$pat" . --exclude-dir=.git --exclude-dir=.work --exclude-dir=superpowers --exclude-dir=.superpowers
   [[ "$status" -eq 1 ]] || { echo "$output"; false; }
 }
 
