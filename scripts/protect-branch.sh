@@ -35,6 +35,28 @@ fi
 [ -n "$reviewers" ] || { echo "protect-branch: reviewers are required (--reviewers a,b or PROTECT_REVIEWERS)" >&2; exit 2; }
 command -v yq > /dev/null 2>&1 || { echo "protect-branch: yq not found on PATH" >&2; exit 2; }
 
+# All argument validation and read-only lookups happen before the first write.
+IFS=',' read -r -a raw_logins <<< "$reviewers"
+logins=()
+for l in ${raw_logins[@]+"${raw_logins[@]}"}; do
+  l="${l//[[:space:]]/}"
+  [ -n "$l" ] || continue
+  logins+=("$l")
+done
+if [ "${#logins[@]}" -eq 0 ]; then
+  echo "protect-branch: no valid reviewers given (empty or blank entries only)" >&2
+  exit 2
+fi
+entries=""
+for l in "${logins[@]}"; do
+  if [ "$dry" -eq 1 ]; then
+    id="\"<id of $l: gh api users/$l --jq .id>\""
+  else
+    id="$(gh api "users/$l" --jq .id)"
+  fi
+  entries="${entries:+$entries, }{ \"type\": \"User\", \"id\": $id }"
+done
+
 checks_json="$(yq -o=json -I=0 '[.jobs | keys | .[]]' "$ROOT/.github/workflows/validate.yml")"
 protection="$(cat << JSON
 {
@@ -61,26 +83,6 @@ call() { # body, then gh api args
 if [ "$dry" -eq 1 ]; then echo "# dry run: nothing is executed"; fi
 call "$protection" --method PUT "repos/$repo/branches/$branch/protection"
 
-IFS=',' read -r -a raw_logins <<< "$reviewers"
-logins=()
-for l in ${raw_logins[@]+"${raw_logins[@]}"}; do
-  l="${l//[[:space:]]/}"
-  [ -n "$l" ] || continue
-  logins+=("$l")
-done
-if [ "${#logins[@]}" -eq 0 ]; then
-  echo "protect-branch: no valid reviewers given (empty or blank entries only)" >&2
-  exit 2
-fi
 for env in test prod; do
-  entries=""
-  for l in "${logins[@]}"; do
-    if [ "$dry" -eq 1 ]; then
-      id="\"<id of $l: gh api users/$l --jq .id>\""
-    else
-      id="$(gh api "users/$l" --jq .id)"
-    fi
-    entries="${entries:+$entries, }{ \"type\": \"User\", \"id\": $id }"
-  done
   call "{ \"reviewers\": [ $entries ], \"deployment_branch_policy\": null }" --method PUT "repos/$repo/environments/$env"
 done

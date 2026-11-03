@@ -27,3 +27,9 @@ Notes
 - app-token.sh parses with `yq -p=json -r`, exits 1 on empty installation id or token, token only on stdout. Bats test stubs curl and uses a key generated in the test.
 - "no change" path comments on an existing open promote/<to> PR (8 lines). Bats asserts git fetch precedes `git push --force-with-lease`.
 - Bite: old protect-branch.sh/app-token.sh -> tests 16 and 19 fail (RED); new code -> GREEN. workflows.bats 20/20, `make test` 111 tests all pass, `make lint` clean.
+
+## Fix round 3
+- protect-branch.sh: reviewer filtering, the "no valid reviewers" exit 2 and reviewer id lookups now run before the first gh write; the environment entries are built once up front. New test: real run with `--reviewers ", ,"` and a recording gh stub -> status 2, zero gh calls (RED against 2b62e73, GREEN now).
+- "alice,,bob" assertion now counts exactly 4 `"type": "User"` entries (2 reviewers x 2 envs) and asserts no `<id of :`. Bite: removing the `continue` filter line fails tests 16 and 17.
+- promote.yml no-change note is idempotent via a hidden marker checked with `gh pr view --json comments` (4 extra lines); bats asserts the marker.
+- workflows.bats 21/21; `make test` and `make lint` pass.

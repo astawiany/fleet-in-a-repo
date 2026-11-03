@@ -190,10 +190,19 @@ STUB
   run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers ", ,"
   [ "$status" -eq 2 ]
   [[ "$output" == *"no valid reviewers"* ]] || false
-  # blank entries between real ones are dropped
+  # blank entries between real ones are dropped: two reviewers per environment, none unresolved
   run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers "alice,,bob"
   [ "$status" -eq 0 ]
-  [[ "$output" != *'"id": ""'* ]] || false
+  [ "$(printf '%s\n' "$output" | grep -o '"type": "User"' | wc -l | tr -d ' ')" = "4" ]
+  [[ "$output" != *"<id of :"* ]] || false
+}
+
+@test "protect-branch validates reviewers before any gh call (real run, blank reviewers)" {
+  stub_gh
+  PATH="$WORK/bin:$PATH" run "$ROOT/scripts/protect-branch.sh" --repo acme/fleet --reviewers ", ,"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"no valid reviewers"* ]] || false
+  [ ! -e "$WORK/gh.calls" ] || { cat "$WORK/gh.calls"; false; }
 }
 
 @test "protect-branch requires reviewers (no hard-coded logins)" {
@@ -259,4 +268,5 @@ STUB
   grep -q 'git fetch origin "\$branch"' "$f"
   [ "$(grep -n 'git fetch origin' "$f" | head -1 | cut -d: -f1)" -lt "$(grep -n 'git push --force-with-lease' "$f" | head -1 | cut -d: -f1)" ]
   grep -q 'gh pr comment' "$f"
+  grep -q 'promotion-note-marker' "$f"
 }

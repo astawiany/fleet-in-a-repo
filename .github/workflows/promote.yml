@@ -131,8 +131,10 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
         run: |
           branch="promote/$TO"
-          if [ "$(gh pr list --head "$branch" --state open --json number --jq length)" -gt 0 ]; then
-            gh pr comment "$branch" --body "$TO already matches $FROM at $GITHUB_SHA; this PR may be obsolete, consider closing it."
+          marker="<!-- promotion-note-marker -->"
+          if [ "$(gh pr list --head "$branch" --state open --json number --jq length)" -gt 0 ] \
+            && ! gh pr view "$branch" --json comments --jq '.comments[].body' | grep -qF "$marker"; then
+            gh pr comment "$branch" --body "$marker $TO already matches $FROM; this PR may be obsolete, consider closing it."
           fi
 
   promote-prod:
@@ -206,6 +208,8 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
         run: |
           branch="promote/$TO"
-          if [ "$(gh pr list --head "$branch" --state open --json number --jq length)" -gt 0 ]; then
-            gh pr comment "$branch" --body "$TO already matches $FROM at $GITHUB_SHA; this PR may be obsolete, consider closing it."
+          marker="<!-- promotion-note-marker -->"
+          if [ "$(gh pr list --head "$branch" --state open --json number --jq length)" -gt 0 ] \
+            && ! gh pr view "$branch" --json comments --jq '.comments[].body' | grep -qF "$marker"; then
+            gh pr comment "$branch" --body "$marker $TO already matches $FROM; this PR may be obsolete, consider closing it."
           fi
