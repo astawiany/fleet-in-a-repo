@@ -41,7 +41,7 @@ Makefile         up / smoke / down
 
 ## 6. CI/CD (GitHub Actions)
 - `validate.yml` (on PR): `kustomize build`, `kubeconform`, `helm lint`, yamllint, and a smoke test on a throwaway kind cluster.
-- `promote.yml` (on merge to `main` changing a chart version): opens the next-environment PR (dev → test → prod) using `GITHUB_TOKEN` or a GitHub App token, with no long-lived PAT.
+- `promote.yml` (on merge to `main` changing a chart version): opens the next-environment PR (dev → test → prod; `test` is a pin-file stage with no cluster in 1a) using `GITHUB_TOKEN` or a GitHub App token, with no long-lived PAT.
 - `release.yml`: packages the demo chart and publishes it to GHCR (OCI).
 - Governance as code: `CODEOWNERS`, branch protection with required status checks, GitHub Environments (`test`, `prod`) with required reviewers.
 - Flux notification-controller reports reconciliation status to commits via the GitHub provider.
@@ -49,7 +49,7 @@ Makefile         up / smoke / down
 
 ## 7. Promotion flow
 1. New chart version merged to `main` is deployed to `*-dev` automatically.
-2. `promote.yml` opens a PR bumping the pinned version for `*-test`; after merge, another for `*-prod`.
+2. `promote.yml` opens a PR bumping the `test` pin file; after merge, another for `prod`. In 1a the `test` environment is a promotion stage only (a pin file plus a GitHub Environment gate) and has no cluster.
 3. Each PR is gated by `validate.yml`. Human approval is the PR review (Environment reviewers for test/prod).
 
 ## 8. Observability

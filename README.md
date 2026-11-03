@@ -43,8 +43,9 @@ FLEET_PROFILE=lite make down    # removes clusters, containers, kubeconfigs
 Drop `FLEET_PROFILE=lite` for the full profile. `make up` is idempotent. Only committed changes are
 synced to the clusters (the offline git server serves git HEAD), so commit before re-running.
 
-Measured on a 7.7 GiB Docker Desktop with the lite profile: `make up` about 7 to 8 minutes
-(after the first image pulls), `make smoke` about 1.5 minutes, 12/12 checks PASS.
+Measured on 2026-11-03 on a 7.7 GiB Docker Desktop with the lite profile, from a clean state: `make up` 6m43s
+(images already pulled), `make smoke` 1m05s with 12/12 checks PASS, `make down` 5s, leaving no kind clusters,
+containers, `.work/` or fleet kubeconfig contexts. The full 2x2 profile has not been run: this machine does not meet its 12 GiB floor.
 The author's observation from those runs (not a guarantee): only about 1 GiB of the VM was spare (container peak about 5.1 GiB, swap in use). The
 preflight floor of 6 GiB for lite was never run on a 6 GiB VM; anything below 7.7 GiB is untested.
 In an earlier run, before the lite trimming (API-server metrics scraping off), Prometheus on `acme-prod` was OOM-killed.
