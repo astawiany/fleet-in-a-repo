@@ -19,6 +19,9 @@ jwt="$header.$payload.$sig"
 
 api="${GITHUB_API_URL:-https://api.github.com}"
 auth=(-H "Authorization: Bearer $jwt" -H "Accept: application/vnd.github+json")
-inst="$(curl -fsSL "${auth[@]}" "$api/repos/$REPO/installation" | sed -n 's/.*"id": *\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+command -v yq > /dev/null 2>&1 || { echo "app-token: yq not found on PATH" >&2; exit 1; }
+inst="$(curl -fsSL "${auth[@]}" "$api/repos/$REPO/installation" | yq -p=json -r '.id // ""')"
 [ -n "$inst" ] || { echo "app-token: could not find an installation for $REPO" >&2; exit 1; }
-curl -fsSL -X POST "${auth[@]}" "$api/app/installations/$inst/access_tokens" | sed -n 's/.*"token": *"\([^"]*\)".*/\1/p' | head -n 1
+token="$(curl -fsSL -X POST "${auth[@]}" "$api/app/installations/$inst/access_tokens" | yq -p=json -r '.token // ""')"
+[ -n "$token" ] || { echo "app-token: GitHub returned no installation token" >&2; exit 1; }
+printf '%s\n' "$token"

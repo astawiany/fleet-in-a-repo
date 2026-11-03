@@ -61,10 +61,20 @@ call() { # body, then gh api args
 if [ "$dry" -eq 1 ]; then echo "# dry run: nothing is executed"; fi
 call "$protection" --method PUT "repos/$repo/branches/$branch/protection"
 
-IFS=',' read -r -a logins <<< "$reviewers"
+IFS=',' read -r -a raw_logins <<< "$reviewers"
+logins=()
+for l in ${raw_logins[@]+"${raw_logins[@]}"}; do
+  l="${l//[[:space:]]/}"
+  [ -n "$l" ] || continue
+  logins+=("$l")
+done
+if [ "${#logins[@]}" -eq 0 ]; then
+  echo "protect-branch: no valid reviewers given (empty or blank entries only)" >&2
+  exit 2
+fi
 for env in test prod; do
   entries=""
-  for l in ${logins[@]+"${logins[@]}"}; do
+  for l in "${logins[@]}"; do
     if [ "$dry" -eq 1 ]; then
       id="\"<id of $l: gh api users/$l --jq .id>\""
     else

@@ -5,7 +5,7 @@
 # Note: PRs opened by promote.yml with GITHUB_TOKEN do not trigger this workflow (GitHub does not
 # start workflows from events caused by GITHUB_TOKEN). Close and reopen such a PR (or push an
 # empty commit to its branch) to run these checks, or switch promote.yml to a GitHub App token
-# (GITHUB_APP_* secrets, see the comments there).
+# (APP_ID / APP_PRIVATE_KEY secrets, see the comments there).
 name: validate
 
 on:

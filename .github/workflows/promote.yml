@@ -11,7 +11,7 @@
 # "Allow GitHub Actions to create and approve pull requests", otherwise gh pr create fails.
 # Limitation: PRs created with GITHUB_TOKEN do not trigger validate.yml, so the required checks stay
 # pending. Close and reopen the PR, or set the repository variable USE_APP_TOKEN=true with secrets
-# GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY of a GitHub App installed on this repo (scripts/app-token.sh
+# APP_ID and APP_PRIVATE_KEY of a GitHub App installed on this repo (scripts/app-token.sh
 # mints the token with openssl and curl); then the PR is created by the App and checks run.
 # See .github/README.md.
 name: promote
@@ -29,6 +29,8 @@ permissions:
 
 jobs:
   detect:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -84,8 +86,8 @@ jobs:
         id: app
         if: ${{ vars.USE_APP_TOKEN == 'true' }}
         env:
-          APP_ID: ${{ secrets.GITHUB_APP_ID }}
-          APP_PRIVATE_KEY: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+          APP_ID: ${{ secrets.APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
           REPO: ${{ github.repository }}
         run: |
           token="$(scripts/app-token.sh)"
@@ -123,6 +125,15 @@ jobs:
           else
             gh pr create --base main --head "$branch" --title "Promote to $TO" --body "$body"
           fi
+      - name: Note on open promotion PR when already up to date
+        if: steps.promote.outputs.changed == 'false'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
+        run: |
+          branch="promote/$TO"
+          if [ "$(gh pr list --head "$branch" --state open --json number --jq length)" -gt 0 ]; then
+            gh pr comment "$branch" --body "$TO already matches $FROM at $GITHUB_SHA; this PR may be obsolete, consider closing it."
+          fi
 
   promote-prod:
     needs: detect
@@ -150,8 +161,8 @@ jobs:
         id: app
         if: ${{ vars.USE_APP_TOKEN == 'true' }}
         env:
-          APP_ID: ${{ secrets.GITHUB_APP_ID }}
-          APP_PRIVATE_KEY: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+          APP_ID: ${{ secrets.APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
           REPO: ${{ github.repository }}
         run: |
           token="$(scripts/app-token.sh)"
@@ -188,4 +199,13 @@ jobs:
             gh pr edit "$branch" --title "Promote to $TO" --body "$body"
           else
             gh pr create --base main --head "$branch" --title "Promote to $TO" --body "$body"
+          fi
+      - name: Note on open promotion PR when already up to date
+        if: steps.promote.outputs.changed == 'false'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
+        run: |
+          branch="promote/$TO"
+          if [ "$(gh pr list --head "$branch" --state open --json number --jq length)" -gt 0 ]; then
+            gh pr comment "$branch" --body "$TO already matches $FROM at $GITHUB_SHA; this PR may be obsolete, consider closing it."
           fi

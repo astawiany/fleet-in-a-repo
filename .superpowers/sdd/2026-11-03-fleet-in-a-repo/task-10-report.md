@@ -19,3 +19,11 @@ Notes
 - I3: header and new .github/README.md document the "Allow GitHub Actions to create and approve pull requests" setting and the GITHUB_TOKEN no-trigger limitation. Optional step (`if: vars.USE_APP_TOKEN == 'true'`) mints an App token via new scripts/app-token.sh (openssl + curl; no new third-party action); never executed here.
 - Minors: CODEOWNERS catch-all `* @OWNER` first; pairing test asserts dev>test and test>prod; protect-branch empty-array guard; yamllint pinned ==1.37.1 (latest 1.38.0 on PyPI; chose previous release); release.yml adds org.opencontainers.image.source label, job output `digest` and step summary. clusterctl checksum NOT added: could not verify the release's checksum asset name offline (left TLS-only).
 - Tests: workflows.bats 18/18; bite proof: environment swap, --force instead of --force-with-lease, cancel-in-progress true, and removed catch-all each made tests fail. make test and make lint pass.
+
+## Fix round 2
+- Secrets renamed GITHUB_APP_ID/GITHUB_APP_PRIVATE_KEY -> APP_ID/APP_PRIVATE_KEY (promote.yml, README, validate.yml comment, bats allow-list); repo grep clean outside the historical plan doc.
+- protect-branch.sh drops blank reviewer entries, exits 2 "no valid reviewers" if none remain.
+- detect job has `permissions: contents: read`.
+- app-token.sh parses with `yq -p=json -r`, exits 1 on empty installation id or token, token only on stdout. Bats test stubs curl and uses a key generated in the test.
+- "no change" path comments on an existing open promote/<to> PR (8 lines). Bats asserts git fetch precedes `git push --force-with-lease`.
+- Bite: old protect-branch.sh/app-token.sh -> tests 16 and 19 fail (RED); new code -> GREEN. workflows.bats 20/20, `make test` 111 tests all pass, `make lint` clean.

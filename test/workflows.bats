@@ -21,11 +21,11 @@ workflows() { ls "$WF"/*.yml; }
   done
 }
 
-@test "no workflow references a secret other than GITHUB_TOKEN or GITHUB_APP_*" {
+@test "no workflow references a secret other than GITHUB_TOKEN, APP_ID or APP_PRIVATE_KEY" {
   [ "$(workflows | wc -l | tr -d ' ')" -ge 3 ]
   found="$(cat "$WF"/*.yml | grep -Eo 'secrets\.[A-Za-z0-9_]+' | sort -u || true)"
   echo "secrets: $found"
-  bad="$(printf '%s\n' "$found" | grep -Ev '^$|^secrets\.(GITHUB_TOKEN|GITHUB_APP_[A-Z0-9_]+)$' || true)"
+  bad="$(printf '%s\n' "$found" | grep -Ev '^$|^secrets\.(GITHUB_TOKEN|APP_ID|APP_PRIVATE_KEY)$' || true)"
   [ -z "$bad" ] || { echo "disallowed secrets: $bad"; false; }
   # no inherited secrets either
   ! grep -q 'secrets: inherit' "$WF"/*.yml
@@ -185,10 +185,15 @@ STUB
   [ ! -e "$WORK/gh.calls" ]
 }
 
-@test "protect-branch survives an empty reviewer list entry set (bash 3.2 set -u)" {
+@test "protect-branch rejects blank reviewer entries with exit 2 and a clear message" {
   stub_gh
-  run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers ,
-  [[ "$output" != *"unbound variable"* ]] || false
+  run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers ", ,"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"no valid reviewers"* ]] || false
+  # blank entries between real ones are dropped
+  run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers "alice,,bob"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *'"id": ""'* ]] || false
 }
 
 @test "protect-branch requires reviewers (no hard-coded logins)" {
@@ -213,4 +218,45 @@ STUB
   # not wired into any default kustomization
   ! grep -rn 'flux-notifications' "$ROOT/infrastructure" "$ROOT/clusters" --include='*.yaml' | grep -v '^[^:]*flux-notifications/'
   grep -qi 'secret' "$d/README.md"
+}
+
+# --- app-token.sh (curl stubbed, fake key generated here) ---------------------------------
+
+app_token_env() { # $1 = installation response, $2 = token response
+  mkdir -p "$WORK/bin"
+  printf '%s' "$1" > "$WORK/resp.inst"; printf '%s' "$2" > "$WORK/resp.tok"
+  cat > "$WORK/bin/curl" <<STUB
+#!/usr/bin/env bash
+case "\$*" in
+  *access_tokens*) cat "$WORK/resp.tok" ;;
+  *) cat "$WORK/resp.inst" ;;
+esac
+STUB
+  chmod +x "$WORK/bin/curl"
+  openssl genrsa -out "$WORK/key.pem" 2048 2> /dev/null
+}
+
+@test "app-token.sh prints the token, and fails on an empty token or missing installation" {
+  app_token_env '{"id": 42}' '{"token": "tok-123"}'
+  PATH="$WORK/bin:$PATH" APP_ID=1 REPO=acme/fleet APP_PRIVATE_KEY="$(cat "$WORK/key.pem")" run "$ROOT/scripts/app-token.sh"
+  [ "$status" -eq 0 ]
+  [ "$output" = "tok-123" ]
+  app_token_env '{"id": 42}' '{"token": ""}'
+  PATH="$WORK/bin:$PATH" APP_ID=1 REPO=acme/fleet APP_PRIVATE_KEY="$(cat "$WORK/key.pem")" run "$ROOT/scripts/app-token.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no installation token"* ]] || false
+  app_token_env '{"message": "Not Found"}' '{"token": "tok-123"}'
+  PATH="$WORK/bin:$PATH" APP_ID=1 REPO=acme/fleet APP_PRIVATE_KEY="$(cat "$WORK/key.pem")" run "$ROOT/scripts/app-token.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"could not find an installation"* ]] || false
+  [[ "$output" != *"tok-123"* ]] || false
+}
+
+@test "promote.yml least privilege, fetch before force-with-lease, and notes obsolete PRs" {
+  f="$WF/promote.yml"
+  [ "$(yq '.jobs.detect.permissions.contents' "$f")" = "read" ]
+  [ "$(yq '.jobs.detect.permissions | length' "$f")" = "1" ]
+  grep -q 'git fetch origin "\$branch"' "$f"
+  [ "$(grep -n 'git fetch origin' "$f" | head -1 | cut -d: -f1)" -lt "$(grep -n 'git push --force-with-lease' "$f" | head -1 | cut -d: -f1)" ]
+  grep -q 'gh pr comment' "$f"
 }
