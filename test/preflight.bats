@@ -26,14 +26,14 @@ run_preflight() {
   rm "$STUBS/kind"
   run_preflight
   [ "$status" -eq 1 ]
-  [[ "$output" == *"kind"* ]]
+  [[ "$output" == *"kind"* ]] || false
 }
 
 @test "preflight fails and mentions \"--profile lite\" when Docker memory < 8 GiB (stub docker info)" {
   make_docker 7516192768 # 7 GiB
   run_preflight
   [ "$status" -eq 1 ]
-  [[ "$output" == *"--profile lite"* ]]
+  [[ "$output" == *"--profile lite"* ]] || false
 }
 
 @test "preflight passes with all stubs present" {
@@ -56,7 +56,7 @@ run_preflight() {
 @test "unknown profile is rejected" {
   run_preflight --profile bogus
   [ "$status" -eq 1 ]
-  [[ "$output" == *"bogus"* ]]
+  [[ "$output" == *"bogus"* ]] || false
 }
 
 @test "customers prints acme and globex for full, acme for lite" {

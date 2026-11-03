@@ -23,8 +23,8 @@ validate_cluster_name() {
 @test "validate fails naming \"Acme_Prod\" for an invalid cluster dir name" {
   run "$ROOT/scripts/validate.sh" "$FIX/bad-name"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"FAIL [name-rule]"* ]]
-  [[ "$output" == *"Acme_Prod"* ]]
+  [[ "$output" == *"FAIL [name-rule]"* ]] || false
+  [[ "$output" == *"Acme_Prod"* ]] || false
 }
 
 @test "validate fails on a capi/customers file with an invalid name" {
@@ -33,16 +33,16 @@ validate_cluster_name() {
   : > "$d/capi/customers/Bad_Name.yaml"
   run "$ROOT/scripts/validate.sh" "$d"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"FAIL [name-rule]"* ]]
-  [[ "$output" == *"Bad_Name"* ]]
+  [[ "$output" == *"FAIL [name-rule]"* ]] || false
+  [[ "$output" == *"Bad_Name"* ]] || false
 }
 
 @test "validate fails on a manifest with an unknown field" {
   need_schemas
   run "$ROOT/scripts/validate.sh" "$FIX/bad-field"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"FAIL [kubeconform]"* ]]
-  [[ "$output" == *"bogusField"* ]]
+  [[ "$output" == *"FAIL [kubeconform]"* ]] || false
+  [[ "$output" == *"bogusField"* ]] || false
 }
 
 @test "validate passes on the existing chart and values" {
@@ -57,8 +57,8 @@ validate_cluster_name() {
   [ "${#n}" -eq 64 ]
   validate_cluster_name "$n"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"FAIL [name-rule]"* ]]
-  [[ "$output" == *"$n"* ]]
+  [[ "$output" == *"FAIL [name-rule]"* ]] || false
+  [[ "$output" == *"$n"* ]] || false
 }
 
 @test "name rule: 63-character name passes" {
@@ -71,8 +71,8 @@ validate_cluster_name() {
 @test "name rule: leading digit fails" {
   validate_cluster_name "1acme"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"FAIL [name-rule]"* ]]
-  [[ "$output" == *"1acme"* ]]
+  [[ "$output" == *"FAIL [name-rule]"* ]] || false
+  [[ "$output" == *"1acme"* ]] || false
 }
 
 @test "name rule: acme-prod passes" {
@@ -89,7 +89,7 @@ validate_cluster_name() {
   done
   PATH="$stubs:/usr/bin:/bin" run "$ROOT/scripts/validate.sh" "$FIX/bad-name"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"kustomize"* ]]
+  [[ "$output" == *"kustomize"* ]] || false
 }
 
 @test "validate passes on the repo" {
