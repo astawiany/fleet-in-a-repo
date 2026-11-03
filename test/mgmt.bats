@@ -233,3 +233,25 @@ copy_repo() {
   run grep -c '^flux bootstrap github .*--owner owner --repository repo .*--path clusters/management/full .*--token-auth' "$CALLS"
   [ "$output" -eq 1 ]
 }
+
+@test "mgmt-up lets a shallow clone push to the bare repo (receive.shallowUpdate before the push)" {
+  mgmt mgmt-up.sh
+  [ "$status" -eq 0 ]
+  cfg="$(grep -n "^git -C $FLEET_WORK_DIR/git/fleet.git config receive.shallowUpdate true\$" "$CALLS" | head -n 1)"
+  push="$(grep -n '^git -C .* push .*HEAD:refs/heads/main' "$CALLS" | head -n 1)"
+  [ -n "$cfg" ] || false
+  [ -n "$push" ] || false
+  [ "${cfg%%:*}" -lt "${push%%:*}" ] || false
+}
+
+@test "FLEET_FLUX_GITHUB mode still pushes HEAD and starts the fleet-git container for the workload clusters" {
+  FLEET_FLUX_GITHUB=owner/repo FLEET_PROFILE=lite mgmt mgmt-up.sh
+  [ "$status" -eq 0 ]
+  grep -q '^flux bootstrap github ' "$CALLS"
+  grep -q '^git -C .* push .*HEAD:refs/heads/main' "$CALLS"
+  grep -q '^docker build ' "$CALLS"
+  grep -q '^docker run -d --name fleet-git --label fleet-in-a-repo=1 ' "$CALLS"
+  # the management cluster's own source comes from GitHub, not from fleet-git
+  run grep -c '^flux create source git' "$CALLS"
+  [ "$output" -eq 0 ]
+}

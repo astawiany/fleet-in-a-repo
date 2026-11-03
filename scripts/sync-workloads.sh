@@ -8,7 +8,7 @@
 #   4. kubectl apply -k clusters/<name>/flux-system: GitRepository flux-system (the offline git
 #      server fleet-git, reachable from the node containers on the kind Docker network) and
 #      Kustomization flux-system (path ./clusters/<name>), which from then on manage themselves.
-# Needs the fleet-git container that mgmt-up.sh runs in offline mode (the default).
+# Needs the fleet-git container that mgmt-up.sh runs (in both of its Flux modes).
 # Versions: versions.env (FLUX_VERSION, CERT_MANAGER_VERSION, GATEWAY_API_VERSION, NGF_VERSION,
 #   METALLB_VERSION, KPS_VERSION).
 # Profile settings in cluster-vars: KPS_SCRAPE_APISERVER=false for lite (the API server's
@@ -47,7 +47,7 @@ done
 
 if [ -z "$(docker ps -q --filter "name=^${GIT_CONTAINER}\$" --filter label=fleet-in-a-repo=1 \
   --filter status=running)" ]; then
-  die "git server container $GIT_CONTAINER is not running; run scripts/mgmt-up.sh (offline mode) first"
+  die "git server container $GIT_CONTAINER is not running; run scripts/mgmt-up.sh first"
 fi
 for n in $names; do
   [ -f "$WORK/kubeconfigs/$n.yaml" ] || die "no kubeconfig for $n at $WORK/kubeconfigs/$n.yaml; run scripts/mgmt-up.sh first"

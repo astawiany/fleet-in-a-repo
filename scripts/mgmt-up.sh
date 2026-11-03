@@ -4,15 +4,17 @@
 #   2. Cluster API core/kubeadm + CAPD providers at CLUSTERCTL_VERSION
 #   3. ConfigMap flux-system/fleet-vars (WORKLOAD_K8S_VERSION, KINDNETD_IMAGE from versions.env),
 #      substituted by Flux into capi/'s ${VAR} placeholders
-#   4. Flux FLUX_VERSION, synced to this repo at clusters/management/$FLEET_PROFILE, whose
-#      Kustomization workload-clusters applies capi/ (namespace, ClusterClass, kindnet CNI
-#      ClusterResourceSet, workload Clusters; the lite profile drops non-lite customers):
+#   4. git HEAD is pushed to the bare repo $WORK/git/fleet.git (receive.shallowUpdate, so a
+#      shallow CI checkout works), served read-only over smart HTTP by the fleet-git container
+#      on the kind Docker network. Always, in both modes of 4b: the workload clusters sync from
+#      it. Only committed changes are synced; re-run after committing.
+#   4b. Flux FLUX_VERSION on the management cluster, synced to this repo at
+#      clusters/management/$FLEET_PROFILE, whose Kustomization workload-clusters applies capi/
+#      (namespace, ClusterClass, kindnet CNI ClusterResourceSet, workload Clusters; the lite
+#      profile drops non-lite customers):
 #        FLEET_FLUX_GITHUB=owner/repo set -> flux bootstrap github --personal --token-auth
 #          (explicit opt-in, needs GITHUB_TOKEN; GITHUB_REPOSITORY alone never triggers it)
-#        otherwise (offline default)      -> git HEAD is pushed to the bare repo
-#          $WORK/git/fleet.git, served read-only over smart HTTP by the fleet-git
-#          container on the kind Docker network; GitRepository flux-system points there.
-#          Only committed changes are synced; re-run after committing.
+#        otherwise (offline default)      -> GitRepository flux-system points at fleet-git.
 #   5. workload kubeconfigs exported to $WORK/kubeconfigs/<name>.yaml, with the API server
 #      rewritten to the load balancer's published localhost port (reachable on macOS too)
 # Workload clusters get their own Flux afterwards: scripts/sync-workloads.sh.
@@ -98,7 +100,32 @@ kubectl -n flux-system create configmap fleet-vars \
   --from-literal=KINDNETD_IMAGE="$KINDNETD_IMAGE" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# 4. Flux; the workload Clusters follow from clusters/management/$FLEET_PROFILE
+# 4. Offline git server, in both modes: the workload clusters always sync from fleet-git
+#    (scripts/sync-workloads.sh); only the management cluster's Flux source differs (4b).
+bare="$WORK/git/fleet.git"
+[ -d "$bare" ] || git init -q --bare "$bare"
+# A shallow clone (actions/checkout's default) may only push into a repo that accepts shallow updates.
+git -C "$bare" config receive.shallowUpdate true
+if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
+  log "warning: uncommitted changes are not synced to Flux (only HEAD is pushed)"
+fi
+git -C "$ROOT" push -q --force "$bare" "HEAD:refs/heads/$BRANCH"
+git -C "$bare" symbolic-ref HEAD "refs/heads/$BRANCH"
+
+git_image="fleet-git-server:$(dir_hash "$GIT_SERVER_DIR")"
+docker image inspect "$git_image" > /dev/null 2>&1 \
+  || docker build -q -t "$git_image" "$GIT_SERVER_DIR" > /dev/null
+running="$(docker ps --filter "name=^${GIT_CONTAINER}\$" --filter label=fleet-in-a-repo=1 \
+  --format '{{.Image}}')"
+if [ "$running" != "$git_image" ]; then
+  if [ -n "$(docker ps -aq --filter "name=^${GIT_CONTAINER}\$" --filter label=fleet-in-a-repo=1)" ]; then
+    docker rm -f -v "$GIT_CONTAINER" > /dev/null
+  fi
+  docker run -d --name "$GIT_CONTAINER" --label fleet-in-a-repo=1 --network kind \
+    --restart unless-stopped -v "$WORK/git:/srv/git:ro" "$git_image" > /dev/null
+fi
+
+# 4b. Flux on the management cluster; the workload Clusters follow from clusters/management/$FLEET_PROFILE
 if [ -n "${FLEET_FLUX_GITHUB:-}" ]; then
   # --personal: the repository belongs to a user account; --token-auth: clone over HTTPS with
   # GITHUB_TOKEN instead of creating a deploy key.
@@ -110,27 +137,6 @@ else
     log "Flux already installed"
   else
     flux install --version "v$FLUX_VERSION"
-  fi
-
-  bare="$WORK/git/fleet.git"
-  [ -d "$bare" ] || git init -q --bare "$bare"
-  if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
-    log "warning: uncommitted changes are not synced to Flux (only HEAD is pushed)"
-  fi
-  git -C "$ROOT" push -q --force "$bare" "HEAD:refs/heads/$BRANCH"
-  git -C "$bare" symbolic-ref HEAD "refs/heads/$BRANCH"
-
-  git_image="fleet-git-server:$(dir_hash "$GIT_SERVER_DIR")"
-  docker image inspect "$git_image" > /dev/null 2>&1 \
-    || docker build -q -t "$git_image" "$GIT_SERVER_DIR" > /dev/null
-  running="$(docker ps --filter "name=^${GIT_CONTAINER}\$" --filter label=fleet-in-a-repo=1 \
-    --format '{{.Image}}')"
-  if [ "$running" != "$git_image" ]; then
-    if [ -n "$(docker ps -aq --filter "name=^${GIT_CONTAINER}\$" --filter label=fleet-in-a-repo=1)" ]; then
-      docker rm -f -v "$GIT_CONTAINER" > /dev/null
-    fi
-    docker run -d --name "$GIT_CONTAINER" --label fleet-in-a-repo=1 --network kind \
-      --restart unless-stopped -v "$WORK/git:/srv/git:ro" "$git_image" > /dev/null
   fi
 
   flux create source git flux-system --url "http://$GIT_CONTAINER/cgi-bin/git/fleet.git" \

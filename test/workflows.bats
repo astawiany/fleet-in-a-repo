@@ -124,6 +124,8 @@ workflows() { ls "$WF"/*.yml; }
   grep -q 'make smoke' "$f"
   # teardown must run even when smoke fails
   [ "$(yq '[.jobs.smoke.steps[] | select(.run == "make down") | select(.if == "always()")] | length' "$f")" = "1" ]
+  # mgmt-up pushes HEAD to a bare repo: the smoke checkout must not be shallow
+  [ "$(yq '.jobs.smoke.steps[] | select(.uses == "actions/checkout*") | .with."fetch-depth"' "$f")" = "0" ] || false
 }
 
 @test "release.yml triggers on chart-v* tags and pushes the chart and image to ghcr" {

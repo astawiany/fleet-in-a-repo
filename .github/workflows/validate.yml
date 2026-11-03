@@ -65,6 +65,9 @@ jobs:
       FLEET_PROFILE: lite
     steps:
       - uses: actions/checkout@v4.2.2  # tag pin; replace with the commit SHA when online
+        with:
+          # full history: mgmt-up.sh pushes HEAD into the offline bare repo served to Flux
+          fetch-depth: 0
       - name: Install tools
         run: |
           scripts/ci-install-tools.sh kind clusterctl flux helm kubectl kubeconform kustomize yq
