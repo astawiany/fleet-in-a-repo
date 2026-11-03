@@ -97,6 +97,23 @@ workflows() { ls "$WF"/*.yml; }
   grep -q 'GITHUB_STEP_SUMMARY' "$f"
 }
 
+@test "release.yml pushes the image the chart references (same basename as image.repository)" {
+  f="$WF/release.yml"
+  values="$ROOT/apps/demo/chart/values.yaml"
+  ref="$(grep -oE 'ref="ghcr\.io/\$\{owner\}/[a-z0-9._-]+:' "$f" | head -n 1)"
+  [ -n "$ref" ] || { echo "no ghcr.io/\${owner}/<name>: image ref in release.yml"; false; }
+  released="${ref##*/}"
+  released="${released%:}"
+  repo="$(yq '.image.repository' "$values")"
+  echo "release: $released, chart: $repo"
+  [ "$released" = "${repo##*/}" ] || false
+  # the release owner is lowercased (ghcr.io refuses upper case)
+  grep -q "owner=\"\$(echo \"\$GITHUB_REPOSITORY_OWNER\" | tr '\[:upper:\]' '\[:lower:\]')\"" "$f"
+  # no personal handle in the chart default: the owner is the documented placeholder
+  [ "$(echo "$repo" | cut -d/ -f2)" = "owner" ] || false
+  grep -q 'release.yml' "$values"
+}
+
 @test "every uses: is pinned to a commit SHA or an explicit version tag" {
   refs="$(grep -hE '^\s*-?\s*uses:' "$WF"/*.yml | sed -E 's/.*uses:[[:space:]]*//; s/[[:space:]]*#.*//')"
   [ -n "$refs" ]

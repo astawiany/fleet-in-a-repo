@@ -47,7 +47,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
-          ref="ghcr.io/${owner}/demo:${TAG#chart-v}"
+          # same image name as apps/demo/chart/values.yaml image.repository (owner placeholder aside)
+          ref="ghcr.io/${owner}/fleet-demo:${TAG#chart-v}"
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
           docker build --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" -t "$ref" apps/demo/src
           docker push "$ref"
