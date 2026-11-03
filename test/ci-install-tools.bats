@@ -41,6 +41,7 @@ EOS
   echo '{}' > "$WORK/serve/trivy_1.0.0_checksums.txt.sigstore.json"
   cat > "$WORK/root/versions.env" <<EOS
 COSIGN_VERSION=1.0.0
+COSIGN_SHA256_LINUX_AMD64=$(sum "$WORK/serve/cosign-linux-amd64")
 TRIVY_VERSION=1.0.0
 YQ_VERSION=1.0.0
 KUBECONFORM_VERSION=1.0.0
@@ -149,4 +150,18 @@ run_install() { run "$WORK/root/scripts/ci-install-tools.sh" "$@"; }
   grep -Eq '^TRIVY_VERSION=[0-9]+\.[0-9]+\.[0-9]+$' "$ROOT/versions.env"
   grep -Eq '^GOVULNCHECK_VERSION=[0-9]+\.[0-9]+\.[0-9]+$' "$ROOT/versions.env"
   grep -Eq '^BUILDKIT_IMAGE=moby/buildkit:v[0-9.]+@sha256:[0-9a-f]{64}$' "$ROOT/versions.env"
+}
+
+@test "cosign is refused when its checksum file matches but the sha256 pinned in versions.env does not" {
+  # a consistent but different release (binary and checksum file replaced together)
+  printf '#!/usr/bin/env bash\necho evil\n' > "$WORK/serve/cosign-linux-amd64"
+  printf '%s  cosign-linux-amd64\n' "$(sha256sum "$WORK/serve/cosign-linux-amd64" | cut -d' ' -f1)" > "$WORK/serve/cosign_checksums.txt"
+  run_install cosign
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"COSIGN_SHA256_LINUX_AMD64"* ]] || { echo "$output"; false; }
+  [ ! -e "$WORK/out/cosign" ]
+}
+
+@test "versions.env pins the cosign sha256 (64 hex)" {
+  grep -Eq '^COSIGN_SHA256_LINUX_AMD64=[0-9a-f]{64}$' "$ROOT/versions.env"
 }

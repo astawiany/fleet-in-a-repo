@@ -4,7 +4,8 @@
 #   (kind clusterctl flux helm kubectl kubeconform kustomize yq cosign trivy)
 # Versions come from versions.env. Every download is sha256-verified: against the checksum file the
 # project publishes next to the artifact, except clusterctl (upstream publishes none), which is
-# checked against CLUSTERCTL_SHA256_LINUX_AMD64 pinned in versions.env (trust on first use).
+# checked against CLUSTERCTL_SHA256_LINUX_AMD64 pinned in versions.env (trust on first use). cosign
+# must match both its checksum file and COSIGN_SHA256_LINUX_AMD64 pinned in versions.env.
 # trivy additionally needs cosign (install it first: `ci-install-tools.sh cosign trivy`): the trivy
 # checksum file's Sigstore signature is verified against trivy's release workflow identity, so a
 # tampered release whose checksum file was rewritten too is still refused.
@@ -77,7 +78,10 @@ install_tool() {
     cosign)
       b="https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}"
       get "$b/cosign-linux-amd64" "$tmp/cosign"; get "$b/cosign_checksums.txt" "$tmp/cosign.sum"
-      verify "$tmp/cosign" "$(grep " cosign-linux-amd64\$" "$tmp/cosign.sum" | cut -d' ' -f1)"
+      # both the release checksum file and the sha256 pinned in versions.env must match
+      [ "$(grep " cosign-linux-amd64\$" "$tmp/cosign.sum" | cut -d' ' -f1)" = "${COSIGN_SHA256_LINUX_AMD64:-}" ] \
+        || { echo "ci-install-tools: cosign_checksums.txt disagrees with COSIGN_SHA256_LINUX_AMD64 in versions.env" >&2; exit 1; }
+      verify "$tmp/cosign" "$COSIGN_SHA256_LINUX_AMD64"
       install -m 0755 "$tmp/cosign" "$BIN/cosign" ;;
     trivy)
       b="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
