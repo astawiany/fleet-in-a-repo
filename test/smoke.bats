@@ -46,7 +46,7 @@ case "$*" in
     if [ -f "$STATE/privileged" ]; then fix pods-privileged.json; else fix pods.json; fi ;;
   *"get --raw"*)
     if [ -f "$STATE/target-down" ]; then fix targets-down.json; else fix targets.json; fi ;;
-  *"get secret kps-grafana"*) fix grafana-secret.json ;;
+  *"get secret kube-prometheus-stack-grafana"*) fix grafana-secret.json ;;
   *) exit 0 ;;
 esac'
   stub curl '

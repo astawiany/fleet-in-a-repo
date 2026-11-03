@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Observability: every active Prometheus target is up (read through the API server proxy of
-# Service monitoring/kps-prometheus), and Grafana (Service monitoring/kps-grafana, credentials
-# from Secret kps-grafana) serves both dashboards, uids platform-health and demo-slis.
+# Service monitoring/kps-prometheus), and Grafana (Service and Secret monitoring/kube-prometheus-stack-grafana:
+# the grafana subchart ignores the parent's fullnameOverride) serves both dashboards, uids platform-health and demo-slis.
 # Retries for SMOKE_RETRY_TIMEOUT (120) s: freshly created targets start as "unknown".
 # Usage: 40-observability.sh <cluster>   (KUBECONFIG points at the cluster)
 set -uo pipefail
@@ -10,6 +10,7 @@ export LC_ALL=C # "0.012", not "0,012", whatever the user locale
 cluster="$1"
 NS=monitoring
 TARGETS="/api/v1/namespaces/$NS/services/http:kps-prometheus:9090/proxy/api/v1/targets?state=active"
+GRAFANA=kube-prometheus-stack-grafana
 DASHBOARDS="platform-health demo-slis"
 TIMEOUT="${SMOKE_RETRY_TIMEOUT:-120}"
 POLL="${SMOKE_POLL:-5}"
@@ -43,14 +44,14 @@ targets_problems() {
 # dashboards_problems: print the dashboards Grafana does not serve, nothing when all are there.
 dashboards_problems() {
   local secret user pass port="" missing="" uid code
-  if ! secret="$(kubectl -n "$NS" get secret kps-grafana -o json 2>&1)"; then
+  if ! secret="$(kubectl -n "$NS" get secret "$GRAFANA" -o json 2>&1)"; then
     echo "grafana secret: $(head -n 1 <<< "$secret")"
     return
   fi
   user="$(jq -r '.data["admin-user"] | @base64d' <<< "$secret")"
   pass="$(jq -r '.data["admin-password"] | @base64d' <<< "$secret")"
   if [ -z "$pf" ] || ! kill -0 "$pf" 2> /dev/null; then
-    kubectl -n "$NS" port-forward svc/kps-grafana :80 > "$tmp/pf.log" 2>&1 &
+    kubectl -n "$NS" port-forward "svc/$GRAFANA" :80 > "$tmp/pf.log" 2>&1 &
     pf=$!
   fi
   for _ in $(seq 1 50); do
