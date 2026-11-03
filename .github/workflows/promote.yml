@@ -1,0 +1,81 @@
+# Promotion pipeline: when the dev (or test) pin changes on main, open a PR that bumps the next
+# stage (dev -> test, test -> prod). Merging that PR is the approval; the test and prod GitHub
+# Environments (scripts/protect-branch.sh) add required reviewers.
+#
+# Auth: GITHUB_TOKEN only (no long-lived PAT). Limitation: PRs created with GITHUB_TOKEN do not
+# trigger other workflows, so validate.yml does not start on them automatically. Either close and
+# reopen the PR to run the checks, or mint an installation token from a GitHub App
+# (secrets.GITHUB_APP_ID / secrets.GITHUB_APP_PRIVATE_KEY, e.g. with actions/create-github-app-token)
+# and pass it as GH_TOKEN below.
+name: promote
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - promotion/versions/dev.yaml
+      - promotion/versions/test.yaml
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - from: dev
+            to: test
+            file: promotion/versions/dev.yaml
+          - from: test
+            to: prod
+            file: promotion/versions/test.yaml
+    steps:
+      - uses: actions/checkout@v4.2.2  # tag pin; replace with the commit SHA when online
+        with:
+          fetch-depth: 2
+      - name: Did this push touch the source pin?
+        id: touched
+        run: |
+          if git diff --name-only HEAD^ HEAD | grep -qx '${{ matrix.file }}'; then
+            echo "touched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "touched=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install yq
+        if: steps.touched.outputs.touched == 'true'
+        run: |
+          scripts/ci-install-tools.sh yq
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Promote ${{ matrix.from }} to ${{ matrix.to }}
+        id: promote
+        if: steps.touched.outputs.touched == 'true'
+        run: |
+          out="$(scripts/promote.sh '${{ matrix.from }}' '${{ matrix.to }}')"
+          echo "$out"
+          if [ "$out" = "no change" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "summary=$out" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Open promotion PR
+        if: steps.promote.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUMMARY: ${{ steps.promote.outputs.summary }}
+        run: |
+          branch="promote/${{ matrix.to }}-${GITHUB_SHA::8}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add "promotion/versions/${{ matrix.to }}.yaml"
+          git commit -m "chore(promotion): $SUMMARY"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "Promote to ${{ matrix.to }}" \
+            --body "Automated promotion from ${{ matrix.from }}: $SUMMARY. Triggered by $GITHUB_SHA."

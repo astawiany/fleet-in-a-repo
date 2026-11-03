@@ -1,0 +1,54 @@
+# Release: on a chart-v* tag, publish the demo Helm chart and the app image to ghcr.io.
+# Auth is GITHUB_TOKEN with packages: write.
+name: release
+
+on:
+  push:
+    tags: ['chart-v*']
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  chart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4.2.2  # tag pin; replace with the commit SHA when online
+      - name: Install helm
+        run: |
+          scripts/ci-install-tools.sh helm
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Package and push chart
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          version="${TAG#chart-v}"
+          echo "$GH_TOKEN" | helm registry login ghcr.io --username "$GH_ACTOR" --password-stdin
+          helm package apps/demo/chart --version "$version" --destination "$RUNNER_TEMP"
+          helm push "$RUNNER_TEMP/demo-${version}.tgz" "oci://ghcr.io/${owner}/charts"
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4.2.2  # tag pin; replace with the commit SHA when online
+      - name: Build and push image, record digest
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          ref="ghcr.io/${owner}/demo:${TAG#chart-v}"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          docker build -t "$ref" apps/demo/src
+          docker push "$ref"
+          digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$ref")"
+          echo "pushed digest: $digest"
+          echo "### Image digest" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`$digest\`" >> "$GITHUB_STEP_SUMMARY"

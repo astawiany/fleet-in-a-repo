@@ -1,0 +1,75 @@
+# Pull-request gate: lint, manifest validation, bats tests, then a lite kind/CAPD smoke run.
+# Job ids (lint, validate, test, smoke) are the required status checks that
+# scripts/protect-branch.sh configures; rename them there too.
+#
+# Note: PRs opened by promote.yml with GITHUB_TOKEN do not trigger this workflow (GitHub does not
+# start workflows from events caused by GITHUB_TOKEN). Close and reopen such a PR (or push an
+# empty commit to its branch) to run these checks, or switch promote.yml to a GitHub App token
+# (GITHUB_APP_* secrets, see the comments there).
+name: validate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4.2.2  # tag pin; replace with the commit SHA when online
+      - name: Install tools
+        run: |
+          scripts/ci-install-tools.sh kustomize kubeconform helm
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pip install --user yamllint
+      - run: make lint
+
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4.2.2  # tag pin; replace with the commit SHA when online
+      - name: Install tools
+        run: |
+          scripts/ci-install-tools.sh kustomize kubeconform helm
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: make validate
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4.2.2  # tag pin; replace with the commit SHA when online
+      - name: Install tools
+        run: |
+          scripts/ci-install-tools.sh kustomize kubeconform helm yq flux
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          sudo apt-get update
+          sudo apt-get install -y bats
+      # test/observability.bats uses promtool from PATH, else docker with the pinned PROMTOOL_IMAGE.
+      - run: make test
+
+  smoke:
+    needs: [lint, validate, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      FLEET_PROFILE: lite
+    steps:
+      - uses: actions/checkout@v4.2.2  # tag pin; replace with the commit SHA when online
+      - name: Install tools
+        run: |
+          scripts/ci-install-tools.sh kind clusterctl flux helm kubectl kubeconform kustomize yq
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: make up
+      - run: make smoke
+      - run: make down
+        if: always()

@@ -1,0 +1,16 @@
+# Code owners. @OWNER is a PLACEHOLDER: the repository owner must replace every @OWNER below with
+# a real user or team handle (for example @your-org/platform and @your-org/app-team) before enabling
+# "Require review from Code Owners". Until then GitHub treats these rules as invalid and nobody is
+# notified.
+
+# Platform paths
+/infrastructure/ @OWNER
+/clusters/ @OWNER
+/capi/ @OWNER
+/kind/ @OWNER
+/scripts/ @OWNER
+/.github/ @OWNER
+/promotion/ @OWNER
+
+# App paths
+/apps/ @OWNER

@@ -1,0 +1,11 @@
+# notification.toolkit.fluxcd.io/v1beta3 is the newest API served by Flux 2.2.3 (flux install --export).
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: github-status
+  namespace: flux-system
+spec:
+  type: github
+  address: https://github.com/OWNER/REPO  # set to this repository's URL
+  secretRef:
+    name: github-status-token  # Secret with key "token"; see README.md
