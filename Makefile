@@ -1,9 +1,12 @@
 SHELL := /bin/bash
-.PHONY: lint test up smoke down
+.PHONY: lint validate test up smoke down
 
-lint:
+lint: validate
 	yamllint .
 	shellcheck scripts/*.sh
+
+validate:
+	scripts/validate.sh
 
 test:
 	bats test/

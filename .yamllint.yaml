@@ -3,6 +3,7 @@ ignore: |
   .superpowers/
   .work/
   apps/demo/chart/templates/
+  test/fixtures/
 rules:
   line-length:
     max: 160
