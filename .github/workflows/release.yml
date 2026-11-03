@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4.2.2  # tag pin; replace with the commit SHA when online
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install helm
         run: |
           scripts/ci-install-tools.sh helm
@@ -42,7 +42,7 @@ jobs:
     outputs:
       digest: ${{ steps.push.outputs.digest }}
     steps:
-      - uses: actions/checkout@v4.2.2  # tag pin; replace with the commit SHA when online
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Build and push image, record digest
         id: push
         env:

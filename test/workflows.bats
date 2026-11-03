@@ -137,13 +137,13 @@ workflows() { ls "$WF"/*.yml; }
   grep -q 'release.yml' "$values"
 }
 
-@test "every uses: is pinned to a commit SHA or an explicit version tag" {
+@test "every uses: is pinned to a full 40-hex commit SHA" {
   refs="$(grep -hE '^\s*-?\s*uses:' "$WF"/*.yml | sed -E 's/.*uses:[[:space:]]*//; s/[[:space:]]*#.*//')"
   [ -n "$refs" ]
   while IFS= read -r r; do
     ref="${r##*@}"
     [ "$ref" != "$r" ] || { echo "unpinned: $r"; false; }
-    [[ "$ref" =~ ^([0-9a-f]{40}|v[0-9]+(\.[0-9]+){0,2})$ ]] || { echo "not pinned: $r"; false; }
+    [[ "$ref" =~ ^[0-9a-f]{40}$ ]] || { echo "not pinned to a commit SHA: $r"; false; }
   done <<< "$refs"
 }
 

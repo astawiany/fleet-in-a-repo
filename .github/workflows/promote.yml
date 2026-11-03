@@ -38,7 +38,7 @@ jobs:
       dev_changed: ${{ steps.files.outputs.dev_changed }}
       test_changed: ${{ steps.files.outputs.test_changed }}
     steps:
-      - uses: actions/checkout@v4.2.2  # tag pin; replace with the commit SHA when online
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
       - name: Which pins did this push change?
@@ -76,7 +76,7 @@ jobs:
       FROM: dev
       TO: test
     steps:
-      - uses: actions/checkout@v4.2.2  # tag pin; replace with the commit SHA when online
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
       - name: Install yq
@@ -164,7 +164,7 @@ jobs:
       FROM: test
       TO: prod
     steps:
-      - uses: actions/checkout@v4.2.2  # tag pin; replace with the commit SHA when online
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
       - name: Install yq
