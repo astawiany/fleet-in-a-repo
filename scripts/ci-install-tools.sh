@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Install pinned CLI tools on a Linux amd64 CI runner into ${CI_BIN:-$HOME/.local/bin}.
 # Usage: scripts/ci-install-tools.sh <tool>...   (kind clusterctl flux helm kubectl kubeconform kustomize yq)
-# Versions come from versions.env. Where the project publishes a checksum next to the artifact it
-# is verified; kubeconform, clusterctl and yq are fetched over TLS only (no checksum file known).
+# Versions come from versions.env. Every download is sha256-verified: against the checksum file the
+# project publishes next to the artifact, except clusterctl (upstream publishes none), which is
+# checked against CLUSTERCTL_SHA256_LINUX_AMD64 pinned in versions.env (trust on first use).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -31,6 +32,7 @@ install_tool() {
       install -m 0755 "$tmp/kind" "$BIN/kind" ;;
     clusterctl)
       get "https://github.com/kubernetes-sigs/cluster-api/releases/download/v${CLUSTERCTL_VERSION}/clusterctl-linux-amd64" "$tmp/clusterctl"
+      verify "$tmp/clusterctl" "$CLUSTERCTL_SHA256_LINUX_AMD64"
       install -m 0755 "$tmp/clusterctl" "$BIN/clusterctl" ;;
     flux)
       b="https://github.com/fluxcd/flux2/releases/download/v${FLUX_VERSION}"
@@ -49,8 +51,11 @@ install_tool() {
       verify "$tmp/kubectl" "$(cut -d' ' -f1 "$tmp/kubectl.sum")"
       install -m 0755 "$tmp/kubectl" "$BIN/kubectl" ;;
     kubeconform)
-      get "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" "$tmp/kc.tgz"
-      tar -xzf "$tmp/kc.tgz" -C "$tmp" kubeconform; install -m 0755 "$tmp/kubeconform" "$BIN/kubeconform" ;;
+      b="https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}"
+      t="kubeconform-linux-amd64.tar.gz"
+      get "$b/$t" "$tmp/$t"; get "$b/CHECKSUMS" "$tmp/kc.sum"
+      verify "$tmp/$t" "$(grep " $t\$" "$tmp/kc.sum" | cut -d' ' -f1)"
+      tar -xzf "$tmp/$t" -C "$tmp" kubeconform; install -m 0755 "$tmp/kubeconform" "$BIN/kubeconform" ;;
     kustomize)
       b="https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}"
       t="kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
@@ -58,7 +63,12 @@ install_tool() {
       verify "$tmp/$t" "$(grep " $t\$" "$tmp/kz.sum" | cut -d' ' -f1)"
       tar -xzf "$tmp/$t" -C "$tmp" kustomize; install -m 0755 "$tmp/kustomize" "$BIN/kustomize" ;;
     yq)
-      get "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64" "$tmp/yq"
+      b="https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}"
+      get "$b/yq_linux_amd64" "$tmp/yq"; get "$b/checksums" "$tmp/yq.sum"; get "$b/checksums_hashes_order" "$tmp/yq.order"
+      # yq's checksums file is "<name> <hash1> <hash2> ...", columns named by checksums_hashes_order
+      col="$(grep -n '^SHA-256$' "$tmp/yq.order" | cut -d: -f1)"
+      [ -n "$col" ] || { echo "ci-install-tools: no SHA-256 column in yq checksums_hashes_order" >&2; exit 1; }
+      verify "$tmp/yq" "$(awk -v c="$((col + 1))" '$1 == "yq_linux_amd64" { print $c }' "$tmp/yq.sum")"
       install -m 0755 "$tmp/yq" "$BIN/yq" ;;
     *) echo "ci-install-tools: unknown tool '$1'" >&2; exit 1 ;;
   esac
