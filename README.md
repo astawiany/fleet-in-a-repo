@@ -31,8 +31,10 @@ Details, Flux layering and the promotion diagram: [docs/architecture.md](docs/ar
 
 ## Quickstart
 
-Prerequisites: Docker, `kind`, `clusterctl`, `flux`, `helm`, `kubectl`, `kubeconform` (checked by
-`scripts/preflight.sh`, together with Docker memory), plus `yq` and `bats` (not checked by preflight). Versions are pinned in `versions.env`.
+Prerequisites: Docker, `kind`, `clusterctl`, `flux`, `helm`, `kubectl`, `kubeconform`, `jq`, `yq`,
+`git` and `curl` (checked by `scripts/preflight.sh`, together with Docker memory; it warns when the
+installed `flux`, `kind` or `clusterctl` differs from its pin), plus `bats` for `make test` (dev-only,
+not checked by preflight). Versions are pinned in `versions.env`.
 
 ```sh
 FLEET_PROFILE=lite make up      # management cluster + workload clusters, Flux everywhere
@@ -129,6 +131,14 @@ Setup steps and the `GITHUB_TOKEN` limitation: [.github/README.md](.github/READM
 `.github/CODEOWNERS` uses the placeholder `@OWNER`; replace it with real handles before enabling
 code-owner review. Flux commit-status notifications are provided as opt-in manifests in
 `infrastructure/base/flux-notifications/`.
+
+## Known limitations
+
+- Flux is pinned to 2.2.3, which serves the older `v2beta2` (HelmRelease) and `v1beta2`
+  (HelmRepository/OCIRepository) APIs. Bumping it means moving those manifests to the current APIs
+  and needs a real `make up`/`make smoke` run.
+- Only the CLI versions pinned in `versions.env` are tested; `preflight.sh` warns about others but
+  does not stop.
 
 ## Cost
 

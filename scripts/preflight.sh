@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # Verify required tools and Docker memory. Usage: preflight.sh [--profile full|lite]
+# Missing tools or too little Docker memory fail; flux/kind/clusterctl client versions other
+# than the versions.env pins only print a WARNING (they are untested, not necessarily broken).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib.sh
 source "$here/lib.sh"
+# shellcheck source=/dev/null
+source "$here/../versions.env"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -30,13 +34,29 @@ case "$FLEET_PROFILE" in
 esac
 
 missing=0
-for tool in docker kind clusterctl flux helm kubectl kubeconform; do
+# jq: up.sh and smoke; yq: promote.sh; git: mgmt-up.sh (offline git server); curl: smoke.
+for tool in docker kind clusterctl flux helm kubectl kubeconform jq yq git curl; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "preflight: required tool '$tool' not found on PATH (see versions.env for expected versions)" >&2
     missing=1
   fi
 done
 [ "$missing" -eq 0 ] || exit 1
+
+# version_warn TOOL PINNED CMD...: WARNING when CMD's first x.y.z differs from PINNED.
+version_warn() {
+  local tool="$1" want="$2" have
+  shift 2
+  have="$("$@" 2> /dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || true)"
+  if [ -z "$have" ]; then
+    echo "preflight: WARNING: cannot read the $tool version; this repo is tested with $want" >&2
+  elif [ "$have" != "$want" ]; then
+    echo "preflight: WARNING: $tool $have is installed, versions.env pins $want; other versions are untested" >&2
+  fi
+}
+version_warn flux "$FLUX_VERSION" flux version --client
+version_warn kind "$KIND_VERSION" kind version
+version_warn clusterctl "$CLUSTERCTL_VERSION" clusterctl version -o short
 
 mem_bytes="$(docker info --format '{{.MemTotal}}' 2>/dev/null || true)"
 if ! [[ "$mem_bytes" =~ ^[0-9]+$ ]]; then
