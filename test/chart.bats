@@ -71,3 +71,44 @@ render() { helm template demo "$CHART" -f "$VALUES/$1.yaml"; }
   [ "$(echo "$out" | yq -N 'select(.kind=="ServiceMonitor") | .metadata.name' | wc -l | tr -d ' ')" = "2" ]
   [ "$(echo "$out" | yq -N 'select(.kind=="PodMonitor") | .metadata.name' | wc -l | tr -d ' ')" = "1" ]
 }
+
+@test "pods mount no service account token, set resource limits and run as UID/GID 65532" {
+  for v in acme-dev acme-prod globex-dev globex-prod; do
+    out="$(render "$v")"
+    [ "$(echo "$out" | yq -N 'select(.kind=="Deployment") | .spec.template.spec.automountServiceAccountToken' | grep -c '^false$')" = "3" ] || { echo "$v: token automounted"; false; }
+    for r in cpu memory; do
+      [ "$(echo "$out" | yq -N "select(.kind==\"Deployment\") | .spec.template.spec.containers[].resources.limits.$r" | grep -vc '^null$')" = "3" ] || { echo "$v: no $r limit"; false; }
+    done
+    for k in runAsUser runAsGroup; do
+      [ "$(echo "$out" | yq -N "select(.kind==\"Deployment\") | .spec.template.spec.containers[].securityContext.$k" | grep -c '^65532$')" = "3" ] || { echo "$v: container $k"; false; }
+    done
+  done
+}
+
+@test "image is repository:tag by default and repository@digest when image.digest is set" {
+  q='select(.kind=="Deployment") | .spec.template.spec.containers[].image'
+  want="$(yq '.image.repository + ":" + .image.tag' "$CHART/values.yaml")"
+  [ "$want" = "example.invalid/fleet-demo:0.1.0" ]
+  [ "$(render acme-dev | yq -N "$q" | sort -u)" = "$want" ] || { render acme-dev | yq -N "$q"; false; }
+  d="sha256:$(printf '%064d' 0 | tr 0 a)"
+  out="$(helm template demo "$CHART" -f "$VALUES/acme-dev.yaml" --set image.digest="$d")"
+  [ "$(echo "$out" | yq -N "$q" | sort -u)" = "example.invalid/fleet-demo@$d" ] || { echo "$out" | yq -N "$q"; false; }
+  # a malformed digest or a latest tag is refused instead of rendered
+  run helm template demo "$CHART" --set image.digest=sha256:abc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"image.digest must look like sha256"* ]] || false
+  run helm template demo "$CHART" --set image.tag=latest
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not latest"* ]] || false
+  # the default values carry an empty digest (offline make up flow stays tag-based)
+  [ "$(yq '.image.digest' "$CHART/values.yaml")" = "" ]
+}
+
+@test "the chart renders no Secret and no latest image tag" {
+  for v in acme-dev acme-prod globex-dev globex-prod; do
+    out="$(render "$v")"
+    [ "$(echo "$out" | yq -N 'select(.kind=="Secret") | .metadata.name' | grep -vc '^$')" = "0" ] || { echo "$v renders a Secret"; false; }
+    run grep -E 'image: .*:latest"?$' <<< "$out"
+    [ "$status" -eq 1 ] || { echo "$v: $output"; false; }
+  done
+}
