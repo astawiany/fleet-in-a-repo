@@ -1,0 +1,28 @@
+# Workload cluster for customer "globex", environment "prod".
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: globex-prod
+  namespace: fleet
+  labels:
+    fleet/customer: globex
+    fleet/environment: prod
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks: ["192.168.0.0/16"]
+    services:
+      cidrBlocks: ["10.128.0.0/12"]
+    serviceDomain: cluster.local
+  topology:
+    classRef:
+      name: fleet-capd
+    # kindest/node default for kind 0.30.0
+    version: v1.34.0
+    controlPlane:
+      replicas: 1
+    workers:
+      machineDeployments:
+        - class: default-worker
+          name: md-0
+          replicas: 1

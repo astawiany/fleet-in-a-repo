@@ -1,0 +1,130 @@
+# CAPD ClusterClass, trimmed from the upstream Cluster API quick-start
+# (clusterclass-quick-start.yaml, release v1.11.3): one control-plane class and one
+# MachineDeployment worker class. Node images are kindest/node:<topology version>.
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: ClusterClass
+metadata:
+  name: fleet-capd
+  namespace: fleet
+spec:
+  controlPlane:
+    templateRef:
+      apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+      kind: KubeadmControlPlaneTemplate
+      name: fleet-capd-control-plane
+    machineInfrastructure:
+      templateRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: DockerMachineTemplate
+        name: fleet-capd-control-plane
+  infrastructure:
+    templateRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+      kind: DockerClusterTemplate
+      name: fleet-capd-cluster
+  workers:
+    machineDeployments:
+      - class: default-worker
+        bootstrap:
+          templateRef:
+            apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+            kind: KubeadmConfigTemplate
+            name: fleet-capd-default-worker
+        infrastructure:
+          templateRef:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+            kind: DockerMachineTemplate
+            name: fleet-capd-default-worker
+  patches:
+    - name: customImage
+      description: Run every machine from the kindest/node image matching the topology version.
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+            kind: DockerMachineTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/customImage
+              valueFrom:
+                template: |
+                  kindest/node:{{ .builtin.controlPlane.version | replace "+" "_" }}
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+            kind: DockerMachineTemplate
+            matchResources:
+              machineDeploymentClass:
+                names:
+                  - default-worker
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/customImage
+              valueFrom:
+                template: |
+                  kindest/node:{{ .builtin.machineDeployment.version | replace "+" "_" }}
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: DockerClusterTemplate
+metadata:
+  name: fleet-capd-cluster
+  namespace: fleet
+spec:
+  template:
+    spec: {}
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlaneTemplate
+metadata:
+  name: fleet-capd-control-plane
+  namespace: fleet
+spec:
+  template:
+    spec:
+      kubeadmConfigSpec:
+        clusterConfiguration:
+          apiServer:
+            # 127.0.0.1/localhost: exported kubeconfigs reach the API via the load balancer's published host port.
+            certSANs: [localhost, 127.0.0.1, 0.0.0.0, host.docker.internal]
+        initConfiguration:
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: eviction-hard
+                value: "nodefs.available<0%,nodefs.inodesFree<0%,imagefs.available<0%"
+        joinConfiguration:
+          nodeRegistration:
+            kubeletExtraArgs:
+              - name: eviction-hard
+                value: "nodefs.available<0%,nodefs.inodesFree<0%,imagefs.available<0%"
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: DockerMachineTemplate
+metadata:
+  name: fleet-capd-control-plane
+  namespace: fleet
+spec:
+  template:
+    spec: {}
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: DockerMachineTemplate
+metadata:
+  name: fleet-capd-default-worker
+  namespace: fleet
+spec:
+  template:
+    spec: {}
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+kind: KubeadmConfigTemplate
+metadata:
+  name: fleet-capd-default-worker
+  namespace: fleet
+spec:
+  template:
+    spec:
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: eviction-hard
+              value: "nodefs.available<0%,nodefs.inodesFree<0%,imagefs.available<0%"

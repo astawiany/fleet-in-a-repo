@@ -1,0 +1,12 @@
+# Management cluster: Cluster API (CAPD) + Flux. Created by scripts/mgmt-up.sh.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: fleet-mgmt
+nodes:
+  - role: control-plane
+    # kind 0.30.0 default node image
+    image: kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
+    extraMounts:
+      # CAPD creates workload-cluster containers through the host Docker socket.
+      - hostPath: /var/run/docker.sock
+        containerPath: /var/run/docker.sock
