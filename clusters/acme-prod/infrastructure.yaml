@@ -8,7 +8,7 @@ metadata:
 spec:
   interval: 10m
   retryInterval: 1m
-  timeout: 20m
+  timeout: 30m
   path: ./infrastructure/overlays/prod
   prune: true
   wait: true

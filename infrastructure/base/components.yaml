@@ -112,7 +112,7 @@ metadata:
 spec:
   interval: 30m
   retryInterval: 1m
-  timeout: 15m
+  timeout: 20m
   path: ./infrastructure/base/monitoring
   prune: true
   wait: true

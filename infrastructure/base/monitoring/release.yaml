@@ -10,7 +10,7 @@ metadata:
   namespace: monitoring
 spec:
   interval: 30m
-  timeout: 10m
+  timeout: 15m
   chart:
     spec:
       chart: kube-prometheus-stack
@@ -74,6 +74,14 @@ spec:
         plugins:
           # Grafana 12 downloads a set of app plugins at start; that spike OOM-killed it at 256Mi.
           preinstall_disabled: true
+      # Grafana 13 registers ~60 core plugins at start-up; on a busy laptop that took longer than
+      # the chart's liveness budget (60s + 10 x 10s) and the pod was restarted in a loop.
+      livenessProbe:
+        httpGet: {path: /api/health, port: grafana}
+        initialDelaySeconds: 60
+        periodSeconds: 10
+        timeoutSeconds: 30
+        failureThreshold: 60
       sidecar:
         dashboards:
           enabled: true
