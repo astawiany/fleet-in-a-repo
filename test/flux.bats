@@ -51,7 +51,8 @@ capi_clusters() {
     ks="$(doc Kustomization apps <<< "$out")"
     [[ "$ks" == *"path: ./apps/demo/flux/$c"* ]] || false
     [[ "$ks" == *"dependsOn:"*"- name: infrastructure"* ]] || false
-    [ -f "$ROOT/apps/demo/flux/$c/kustomization.yaml" ]
+    # kustomize-controller rejects a kustomization that yields no objects
+    [ -n "$(kustomize build "$ROOT/apps/demo/flux/$c")" ]
 
     ks="$(doc Kustomization flux-system <<< "$out")"
     [[ "$ks" == *"path: ./clusters/$c"* ]] || false
