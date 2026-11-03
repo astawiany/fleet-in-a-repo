@@ -1,0 +1,8 @@
+{"apiVersion": "v1", "kind": "List", "items": [
+  {"kind": "Kustomization", "metadata": {"name": "flux-system", "namespace": "flux-system"},
+   "status": {"conditions": [{"type": "Ready", "status": "True", "message": "Applied revision: main@sha1:abc"}]}},
+  {"kind": "HelmRelease", "metadata": {"name": "demo", "namespace": "flux-system"},
+   "status": {"conditions": [{"type": "Ready", "status": "False", "message": "install retries exhausted"}]}},
+  {"kind": "HelmRelease", "metadata": {"name": "kube-prometheus-stack", "namespace": "monitoring"},
+   "status": {"conditions": [{"type": "Ready", "status": "True", "message": "Helm install succeeded"}]}}
+]}

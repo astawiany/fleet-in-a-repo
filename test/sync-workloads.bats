@@ -122,3 +122,17 @@ sync() {
   run grep -c -E '^(flux|kubectl) ' "$CALLS"
   [ "$output" -eq 0 ]
 }
+
+@test "the lite profile stops scraping the API server; full keeps it (cluster-vars KPS_SCRAPE_APISERVER)" {
+  FLEET_PROFILE=lite sync
+  [ "$status" -eq 0 ]
+  line="$(grep '^kubectl .*acme-dev.yaml.* create configmap cluster-vars' "$CALLS")"
+  [[ "$line" == *"--from-literal=KPS_SCRAPE_APISERVER=false "* ]] || false
+  : > "$CALLS"
+  sync
+  [ "$status" -eq 0 ]
+  line="$(grep '^kubectl .*globex-prod.yaml.* create configmap cluster-vars' "$CALLS")"
+  [[ "$line" == *"--from-literal=KPS_SCRAPE_APISERVER=true "* ]] || false
+  # the kube-prometheus-stack values read it, defaulting to scraping
+  grep -q 'enabled: ${KPS_SCRAPE_APISERVER:=true}' "$ROOT/infrastructure/base/monitoring/release.yaml"
+}

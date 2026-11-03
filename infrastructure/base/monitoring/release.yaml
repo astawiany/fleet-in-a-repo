@@ -40,6 +40,9 @@ spec:
       enabled: false
     kubeProxy:
       enabled: false
+    # false in the lite profile (cluster-vars, scripts/sync-workloads.sh): saves Prometheus memory.
+    kubeApiServer:
+      enabled: ${KPS_SCRAPE_APISERVER:=true}
     defaultRules:
       rules:
         alertmanager: false

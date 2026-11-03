@@ -3,7 +3,7 @@ SHELL := /bin/bash
 
 lint: validate
 	yamllint .
-	shellcheck scripts/*.sh
+	shellcheck scripts/*.sh scripts/smoke.d/*.sh
 
 validate:
 	scripts/validate.sh
@@ -11,6 +11,11 @@ validate:
 test:
 	bats test/
 
-up smoke down:
-	@echo "make $@: not implemented yet" >&2
-	@exit 1
+up:
+	scripts/up.sh
+
+smoke:
+	scripts/smoke.sh
+
+down:
+	scripts/down.sh

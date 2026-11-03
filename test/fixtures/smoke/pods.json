@@ -1,0 +1,120 @@
+{
+ "apiVersion": "v1",
+ "kind": "List",
+ "items": [
+  {
+   "kind": "Pod",
+   "metadata": {
+    "name": "demo-web-1",
+    "namespace": "demo",
+    "labels": {
+     "app.kubernetes.io/name": "demo",
+     "app.kubernetes.io/instance": "demo",
+     "app.kubernetes.io/part-of": "fleet-demo",
+     "app.kubernetes.io/component": "web",
+     "app.kubernetes.io/managed-by": "Helm"
+    }
+   },
+   "spec": {
+    "containers": [
+     {
+      "name": "demo",
+      "securityContext": {
+       "runAsNonRoot": true,
+       "allowPrivilegeEscalation": false,
+       "capabilities": {
+        "drop": [
+         "ALL"
+        ]
+       }
+      }
+     }
+    ]
+   },
+   "status": {
+    "conditions": [
+     {
+      "type": "Ready",
+      "status": "True"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "Pod",
+   "metadata": {
+    "name": "demo-api-old",
+    "namespace": "demo",
+    "labels": {
+     "app.kubernetes.io/name": "demo",
+     "app.kubernetes.io/instance": "demo",
+     "app.kubernetes.io/part-of": "fleet-demo",
+     "app.kubernetes.io/component": "api",
+     "app.kubernetes.io/managed-by": "Helm"
+    }
+   },
+   "spec": {
+    "containers": [
+     {
+      "name": "demo",
+      "securityContext": {
+       "runAsNonRoot": true,
+       "allowPrivilegeEscalation": false,
+       "capabilities": {
+        "drop": [
+         "ALL"
+        ]
+       }
+      }
+     }
+    ]
+   },
+   "status": {
+    "conditions": [
+     {
+      "type": "Ready",
+      "status": "True"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "Pod",
+   "metadata": {
+    "name": "demo-worker-1",
+    "namespace": "demo",
+    "labels": {
+     "app.kubernetes.io/name": "demo",
+     "app.kubernetes.io/instance": "demo",
+     "app.kubernetes.io/part-of": "fleet-demo",
+     "app.kubernetes.io/component": "worker",
+     "app.kubernetes.io/managed-by": "Helm"
+    }
+   },
+   "spec": {
+    "containers": [
+     {
+      "name": "demo",
+      "securityContext": {
+       "runAsNonRoot": true,
+       "allowPrivilegeEscalation": false,
+       "capabilities": {
+        "drop": [
+         "ALL"
+        ]
+       }
+      }
+     }
+    ]
+   },
+   "status": {
+    "conditions": [
+     {
+      "type": "Ready",
+      "status": "True"
+     }
+    ]
+   }
+  }
+ ]
+}

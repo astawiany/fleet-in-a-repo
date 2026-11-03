@@ -1,0 +1,25 @@
+{
+ "status": "success",
+ "data": {
+  "activeTargets": [
+   {
+    "scrapePool": "serviceMonitor/demo/demo-api/0",
+    "labels": {
+     "instance": "10.0.0.5:8080",
+     "job": "demo-api"
+    },
+    "health": "down",
+    "lastError": "connection refused"
+   },
+   {
+    "scrapePool": "podMonitor/monitoring/flux-controllers/0",
+    "labels": {
+     "instance": "10.0.0.9:8080",
+     "job": "flux"
+    },
+    "health": "up",
+    "lastError": ""
+   }
+  ]
+ }
+}

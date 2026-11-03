@@ -42,7 +42,7 @@ setup() {
 
 @test "promtool check rules passes" {
   . "$ROOT/versions.env"
-  tmp="$BATS_TEST_TMPDIR/rules"; mkdir -p "$tmp"
+  tmp="$BATS_TEST_TMPDIR/rules"; mkdir -p "$tmp"; chmod 755 "$tmp"
   yq -N '.spec' "$RULES" > "$tmp/rules.yaml"
   if command -v promtool > /dev/null 2>&1; then
     promtool check rules "$tmp/rules.yaml"

@@ -11,6 +11,9 @@
 # Needs the fleet-git container that mgmt-up.sh runs in offline mode (the default).
 # Versions: versions.env (FLUX_VERSION, CERT_MANAGER_VERSION, GATEWAY_API_VERSION, NGF_VERSION,
 #   METALLB_VERSION, KPS_VERSION).
+# Profile settings in cluster-vars: KPS_SCRAPE_APISERVER=false for lite (the API server's
+#   metrics are kube-prometheus-stack's largest series source and no dashboard or SLO uses them;
+#   dropping them keeps Prometheus small enough for two clusters in an 8 GiB Docker VM), true for full.
 # Env: FLEET_PROFILE (full|lite), FLEET_WORK_DIR (default <repo>/.work),
 #      FLEET_WAIT_TIMEOUT seconds to wait for each API server (default 600).
 set -euo pipefail
@@ -34,6 +37,7 @@ die() {
 }
 
 cust="$(customers)"
+if [ "$FLEET_PROFILE" = lite ]; then scrape_apiserver=false; else scrape_apiserver=true; fi
 names=""
 for c in $cust; do
   for e in $ENVS; do
@@ -71,6 +75,7 @@ for n in $names; do
     --from-literal=NGF_VERSION="$NGF_VERSION" \
     --from-literal=METALLB_VERSION="$METALLB_VERSION" \
     --from-literal=KPS_VERSION="$KPS_VERSION" \
+    --from-literal=KPS_SCRAPE_APISERVER="$scrape_apiserver" \
     --dry-run=client -o yaml | kubectl "$kc" apply -f -
 
   kubectl "$kc" apply -k "$ROOT/clusters/$n/flux-system"

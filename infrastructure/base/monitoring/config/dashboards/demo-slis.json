@@ -40,7 +40,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_requests_total{code=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m]))",
+          "expr": "(sum(rate(http_requests_total{code=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_requests_total[5m]))",
           "legendFormat": ""
         }
       ]
@@ -124,7 +124,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "1 - (sum(increase(http_requests_total{code=~\"5..\"}[30d])) / sum(increase(http_requests_total[30d])))",
+          "expr": "1 - ((sum(increase(http_requests_total{code=~\"5..\"}[30d])) or vector(0)) / sum(increase(http_requests_total[30d])))",
           "legendFormat": ""
         }
       ]
@@ -152,7 +152,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(sum(rate(http_requests_total{code=~\"5..\"}[1h])) / sum(rate(http_requests_total[1h]))) / 0.001",
+          "expr": "((sum(rate(http_requests_total{code=~\"5..\"}[1h])) or vector(0)) / sum(rate(http_requests_total[1h]))) / 0.001",
           "legendFormat": ""
         }
       ]
