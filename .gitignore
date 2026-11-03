@@ -1,0 +1,4 @@
+.work/
+*.kubeconfig
+kubeconfig*
+.DS_Store
