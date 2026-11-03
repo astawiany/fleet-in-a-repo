@@ -38,7 +38,17 @@ ISSUER=https://token.actions.githubusercontent.com
 
 The identity matches only `release.yml` of this repository running for a `chart-vX.Y.Z` tag, for
 example `https://github.com/astawiany/fleet-in-a-repo/.github/workflows/release.yml@refs/tags/chart-v0.1.0`.
-A signature made by any other workflow, branch or repository does not match it.
+A signature made by any other workflow, branch or repository does not match it. It is only as
+strong as the tag ruleset (see the threat model).
+
+For a known version, also check the exact identity of that tag, so a signature from another
+release tag cannot stand in for it:
+
+```sh
+cosign verify "ghcr.io/astawiany/fleet-demo@$DIGEST" \
+  --certificate-identity "https://github.com/astawiany/fleet-in-a-repo/.github/workflows/release.yml@refs/tags/chart-v$VERSION" \
+  --certificate-oidc-issuer "$ISSUER"
+```
 
 Image: resolve the tag to a digest once, verify that digest, then use only the digest.
 
@@ -75,14 +85,18 @@ the base image digests.
 
 ## Threat model
 
-1. Only `release.yml` on a `chart-vX.Y.Z` tag produces signatures that match the identity above.
-2. A tag must point to a commit on `main` (the `verify` job), and `main` only changes through
-   reviewed pull requests (branch protection, CODEOWNERS).
-3. With `--protect-tags`, only repository admins can create, move or delete `chart-v*` tags.
-4. Each publish job waits for a reviewer of the `release` Environment, which also only accepts
-   `chart-v*` tags.
-5. A writer pushing a tag without admin rights is blocked by the ruleset; without the ruleset they
-   still need the Environment approval, and the commit must already be on `main`.
+1. The identity matches any `.github/workflows/release.yml` running for a `chart-vX.Y.Z` tag, with
+   whatever content that file has at the tagged commit: it names the file and the tag, not the code.
+2. So the control is who can create `chart-v*` tags. `scripts/protect-branch.sh` creates the ruleset
+   `release-tags` by default: only repository admins can create, move or delete them. The signing
+   guarantee holds only while that ruleset is active; without it any writer can push a branch with
+   a modified `release.yml` (no `verify`, no Environment), tag it and get a matching signature.
+3. The `verify` job (tag format, commit on `main`, version not yet published) and the `release`
+   Environment are procedural gates: they bind only the `release.yml` that calls them.
+4. `main` changes only through reviewed pull requests (branch protection, CODEOWNERS), so the
+   reviewed `release.yml` keeps those gates for tags an admin cuts from `main`.
+5. A tag pusher who is also the only `release` reviewer can approve their own release. With more
+   than one reviewer, enable "Prevent self-review" (`prevent_self_review`) on the Environment.
 6. Not blocked: a writer can push a workflow on another branch that uses `GITHUB_TOKEN` with
    `packages: write` and overwrites a tag on GHCR. Such an image has no matching signature.
 7. Tags on GHCR are mutable: always resolve a tag once, verify the digest, and deploy by digest.
@@ -93,9 +107,12 @@ the base image digests.
 
 ## Release procedure
 
+0. Once per repository: apply branch protection, the Environments and the tag ruleset:
+   `scripts/protect-branch.sh --repo astawiany/fleet-in-a-repo --reviewers <login>` (preview with
+   `--dry-run`; see [.github/README.md](../.github/README.md)).
 1. Merge the change to `main` and bump the version: `apps/demo/chart/Chart.yaml` is informative,
    the tag decides the published version.
-2. Create the tag from `main` (an admin, when `--protect-tags` is on):
+2. Create the tag from `main` (only admins can, through the ruleset):
    `git tag chart-v0.1.0 origin/main && git push origin chart-v0.1.0`.
 3. `release.yml` runs `verify` (tag format, commit on `main`, version not yet in the registry).
 4. Approve the `release` Environment for the `image` job, then again for the `chart` job (each job

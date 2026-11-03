@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Apply branch protection on main and the test/prod/release GitHub Environments with required reviewers.
 # Usage: scripts/protect-branch.sh [--dry-run] --repo owner/name --reviewers login[,login...]
-#          [--branch main] [--approvals N] [--enforce-admins] [--protect-tags]
+#          [--branch main] [--approvals N] [--enforce-admins] [--no-protect-tags]
 #   --dry-run        print the exact gh api calls and execute nothing (--repo defaults to astawiany/fleet-in-a-repo)
 #   --repo           required for a real run; there is no default and it never runs implicitly
 #   --reviewers      comma-separated GitHub logins for the environments (or env PROTECT_REVIEWERS)
@@ -9,8 +9,10 @@
 #                    code-owner review is required too. A solo owner cannot approve their own PR:
 #                    use 0 (the status checks still gate merges); see .github/README.md.
 #   --enforce-admins apply the rules to admins as well (default off, so an owner is never locked out)
-#   --protect-tags   also create (or update) the tag ruleset "release-tags": only repository admins
-#                    may create, move or delete chart-v* tags, which trigger release.yml
+#   --no-protect-tags skip the tag ruleset "release-tags". By default it is created (or updated): only
+#                    repository admins may create, move or delete chart-v* tags. That ruleset is what
+#                    makes a release signature trustworthy (any chart-v* tag runs the release.yml of its
+#                    own commit), so opt out only on a repository that never publishes.
 # Required status checks are the job ids of .github/workflows/validate.yml, except the jobs in
 # OPTIONAL_JOBS (they depend on external vulnerability databases and must not block merges).
 # The release Environment only accepts deployments from chart-v* tags.
@@ -22,7 +24,7 @@ repo=""
 branch=main
 approvals=1
 enforce_admins=false
-protect_tags=0
+protect_tags=1
 OPTIONAL_JOBS="security"
 reviewers="${PROTECT_REVIEWERS:-}"
 
@@ -34,7 +36,7 @@ while [ $# -gt 0 ]; do
     --branch) [ $# -ge 2 ] || { echo "protect-branch: --branch needs a value" >&2; exit 2; }; branch="$2"; shift 2 ;;
     --approvals) [ $# -ge 2 ] || { echo "protect-branch: --approvals needs a number" >&2; exit 2; }; approvals="$2"; shift 2 ;;
     --enforce-admins) enforce_admins=true; shift ;;
-    --protect-tags) protect_tags=1; shift ;;
+    --no-protect-tags) protect_tags=0; shift ;;
     *) echo "protect-branch: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
@@ -136,6 +138,9 @@ if [ -z "$tag_policy_id" ]; then
   call '{ "name": "chart-v*", "type": "tag" }' --method POST "repos/$repo/environments/release/deployment-branch-policies"
 fi
 
+if [ "$protect_tags" -eq 0 ]; then
+  echo "protect-branch: WARNING: --no-protect-tags: anyone with write access can push a chart-v* tag and get a release signature that matches docs/security.md" >&2
+fi
 if [ "$protect_tags" -eq 1 ]; then
   if [ "$dry" -eq 1 ]; then
     echo "# release-tags: POST creates it; a re-run updates the existing ruleset with PUT repos/$repo/rulesets/<id>"

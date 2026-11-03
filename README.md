@@ -87,7 +87,8 @@ management cluster; workload clusters still sync from the offline git server.
 
 ## How promotion works
 
-1. A chart version is released (`release.yml`, tag `chart-v*`). Bumping the dev pin
+1. A chart version is released (`release.yml`, tag `chart-v*`; only admins can push those tags once
+   `scripts/protect-branch.sh` has run, see [docs/security.md](docs/security.md#release-procedure)). Bumping the dev pin
    `promotion/versions/dev.yaml` is a manual PR; `release.yml` does not do it. After merge, the
    `*-dev` clusters pick it up.
 2. `promote.yml` opens a PR copying the pin to `test.yaml`, then another from `test` to `prod`

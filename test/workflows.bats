@@ -242,14 +242,15 @@ STUB
   [[ "$output" == *'"deployment_branch_policy": { "protected_branches": false, "custom_branch_policies": true }'* ]] || false
   [[ "$output" == *"gh api --method POST repos/acme/fleet/environments/release/deployment-branch-policies"* ]] || false
   [[ "$output" == *'{ "name": "chart-v*", "type": "tag" }'* ]] || false
-  # no tag ruleset unless asked for
-  [[ "$output" != *"rulesets"* ]] || false
+  # the chart-v* tag ruleset is part of the default run
+  [[ "$output" == *"gh api --method POST repos/acme/fleet/rulesets"* ]] || false
 }
 
-@test "protect-branch --protect-tags prints the chart-v* tag ruleset (admins only), dry-run never calls gh" {
+@test "protect-branch prints the chart-v* tag ruleset (admins only) by default, dry-run never calls gh" {
   stub_gh
-  PATH="$WORK/bin:$PATH" run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers alice --protect-tags
+  PATH="$WORK/bin:$PATH" run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers alice
   [ "$status" -eq 0 ]
+  [[ "$output" != *"WARNING"* ]] || false
   [ ! -e "$WORK/gh.calls" ] || { cat "$WORK/gh.calls"; false; }
   [[ "$output" == *"gh api --method POST repos/acme/fleet/rulesets --input -"* ]] || false
   body="$(printf '%s\n' "$output" | sed -n '/repos\/acme\/fleet\/rulesets --input/,/^JSON$/p' | sed '1d;$d')"
@@ -315,6 +316,20 @@ STUB
   run env -u PROTECT_REVIEWERS PATH="$WORK/bin:$PATH" "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet
   [ "$status" -ne 0 ]
   [[ "$output" == *"reviewers"* ]] || false
+}
+
+@test "protect-branch --no-protect-tags skips the tag ruleset with a warning; --protect-tags is gone" {
+  stub_gh
+  PATH="$WORK/bin:$PATH" run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers alice --no-protect-tags
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"rulesets"* ]] || false
+  [[ "$output" == *"WARNING: --no-protect-tags"* ]] || false
+  # the rest is unchanged: branch protection and the release Environment are still applied
+  [[ "$output" == *"repos/acme/fleet/branches/main/protection"* ]] || false
+  [[ "$output" == *"repos/acme/fleet/environments/release"* ]] || false
+  PATH="$WORK/bin:$PATH" run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers alice --protect-tags
+  [ "$status" -eq 2 ]
+  [ ! -e "$WORK/gh.calls" ]
 }
 
 # --- Flux notifications (opt-in) ----------------------------------------------------------
