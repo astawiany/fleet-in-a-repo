@@ -1,0 +1,43 @@
+# Demo availability SLO: 99.9% of requests are not 5xx (error budget 0.1%). Multiwindow burn-rate
+# alerts (Google SRE workbook): a long window shows the burn is sustained, a short window shows
+# it is still happening. Fast = 14.4x budget burn (2% of a 30d budget in 1h); slow = 6x (5% in 6h).
+# The demo counter http_requests_total only has a `code` label.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: demo-slo
+  namespace: monitoring
+spec:
+  groups:
+    - name: demo-slo
+      rules:
+        - alert: DemoErrorBudgetBurnFast
+          expr: |
+            (
+              sum(rate(http_requests_total{code=~"5.."}[1h])) / sum(rate(http_requests_total[1h])) > (14.4 * 0.001)
+            )
+            and
+            (
+              sum(rate(http_requests_total{code=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > (14.4 * 0.001)
+            )
+          for: 2m
+          labels:
+            severity: page
+          annotations:
+            summary: Demo is burning its 99.9% error budget 14.4x too fast
+            description: More than 1.44% of demo requests failed (5xx) over both 1h and 5m.
+        - alert: DemoErrorBudgetBurnSlow
+          expr: |
+            (
+              sum(rate(http_requests_total{code=~"5.."}[6h])) / sum(rate(http_requests_total[6h])) > (6 * 0.001)
+            )
+            and
+            (
+              sum(rate(http_requests_total{code=~"5.."}[30m])) / sum(rate(http_requests_total[30m])) > (6 * 0.001)
+            )
+          for: 15m
+          labels:
+            severity: ticket
+          annotations:
+            summary: Demo is burning its 99.9% error budget 6x too fast
+            description: More than 0.6% of demo requests failed (5xx) over both 6h and 30m.

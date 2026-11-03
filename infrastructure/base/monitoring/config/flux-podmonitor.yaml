@@ -1,0 +1,20 @@
+# Flux controllers expose gotk_* metrics on the pod port http-prom (8080); nothing scrapes them
+# unless a PodMonitor does. Prometheus selects all PodMonitors (see ../release.yaml).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: flux-controllers
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [flux-system]
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [source-controller, kustomize-controller, helm-controller, notification-controller]
+  podMetricsEndpoints:
+    - port: http-prom
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_label_app]
+          targetLabel: controller
