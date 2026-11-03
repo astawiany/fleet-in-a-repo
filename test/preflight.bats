@@ -8,6 +8,15 @@ setup() {
     printf '#!/bin/sh\nexit 0\n' > "$STUBS/$t"
     chmod +x "$STUBS/$t"
   done
+  # System essentials only: symlink the basic tools instead of putting /usr/bin on PATH, so a real
+  # jq/git/curl/yq installed in /usr/bin (Linux CI runners) cannot hide a "tool is missing" case.
+  ESS="$BATS_TEST_TMPDIR/essentials"
+  mkdir -p "$ESS"
+  for t in bash sh env uname awk sed grep tr cut sort head tail dirname basename cat printf expr wc ls \
+    mkdir rm date true false test dd id sleep uniq tee xargs readlink mktemp; do
+    p="$(command -v "$t" 2>/dev/null || true)"
+    case "$p" in /*) ln -sf "$p" "$ESS/$t" ;; esac
+  done
   make_docker 17179869184 # 16 GiB
   unset FLEET_PROFILE
 }
@@ -23,9 +32,9 @@ version_stub() {
   chmod +x "$STUBS/$1"
 }
 
-# Run preflight with only the stub dir (plus system essentials) on PATH.
+# Run preflight with only the stub dir plus the essentials dir on PATH.
 run_preflight() {
-  PATH="$STUBS:/usr/bin:/bin" run bash "$ROOT/scripts/preflight.sh" "$@"
+  PATH="$STUBS:$ESS" run bash "$ROOT/scripts/preflight.sh" "$@"
 }
 
 @test "preflight fails naming \"kind\" when kind is missing from PATH" {
