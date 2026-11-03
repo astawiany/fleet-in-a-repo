@@ -13,7 +13,9 @@ admins. Options:
 - Tag ruleset `release-tags` (Settings > Rules > Rulesets), created by default: only repository
   admins may create, move or delete `chart-v*` tags, which trigger `release.yml`. Re-running updates
   the existing ruleset. `--no-protect-tags` skips it (prints a warning); do not use it on a
-  repository that publishes.
+  repository that publishes. Rulesets need a plan that supports them (public repositories, or a paid
+  plan for private ones); where they are unavailable the script stops at the ruleset lookup before
+  changing anything, and the signing guarantee does not hold.
 
 Solo owner: GitHub never lets authors approve their own PR, so with one maintainer use
 `--approvals 0` (merges are still gated by the required checks; code-owner review is then off) and

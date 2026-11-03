@@ -44,15 +44,6 @@ example `https://github.com/astawiany/fleet-in-a-repo/.github/workflows/release.
 A signature made by any other workflow, branch or repository does not match it. It is only as
 strong as the tag ruleset (see the threat model).
 
-For a known version, also check the exact identity of that tag, so a signature from another
-release tag cannot stand in for it:
-
-```sh
-cosign verify "ghcr.io/astawiany/fleet-demo@$DIGEST" \
-  --certificate-identity "https://github.com/astawiany/fleet-in-a-repo/.github/workflows/release.yml@refs/tags/chart-v$VERSION" \
-  --certificate-oidc-issuer "$ISSUER"
-```
-
 Image: resolve the tag to a digest once, verify that digest, then use only the digest.
 
 ```sh
@@ -62,12 +53,25 @@ cosign verify "ghcr.io/astawiany/fleet-demo@$DIGEST" \
   --certificate-oidc-issuer "$ISSUER"
 ```
 
+For a known version, also check the exact identity of that tag, so a signature from another
+release tag cannot stand in for it (run after `DIGEST` is set above):
+
+```sh
+cosign verify "ghcr.io/astawiany/fleet-demo@$DIGEST" \
+  --certificate-identity "https://github.com/astawiany/fleet-in-a-repo/.github/workflows/release.yml@refs/tags/chart-v$VERSION" \
+  --certificate-oidc-issuer "$ISSUER"
+```
+
 Chart: pull it, verify the digest `helm pull` printed, then install the verified local file.
 
 ```sh
 CHART_DIGEST="$(helm pull oci://ghcr.io/astawiany/charts/demo --version "$VERSION" 2>&1 | sed -n 's/^Digest: //p')"
 cosign verify "ghcr.io/astawiany/charts/demo@$CHART_DIGEST" \
   --certificate-identity-regexp "$IDENTITY" \
+  --certificate-oidc-issuer "$ISSUER"
+# exact identity of the known release tag, as for the image:
+cosign verify "ghcr.io/astawiany/charts/demo@$CHART_DIGEST" \
+  --certificate-identity "https://github.com/astawiany/fleet-in-a-repo/.github/workflows/release.yml@refs/tags/chart-v$VERSION" \
   --certificate-oidc-issuer "$ISSUER"
 tar -xzOf "demo-$VERSION.tgz" demo/values.yaml | yq '.image'   # digest must equal $DIGEST
 helm install demo "./demo-$VERSION.tgz"

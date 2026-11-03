@@ -66,11 +66,13 @@ setup() {
   want="$("$ROOT/scripts/release.sh" identity-regexp astawiany/fleet-in-a-repo)"
   grep -qxF "IDENTITY='$want'" "$f" || { echo "IDENTITY line differs from: $want"; false; }
   grep -qxF 'ISSUER=https://token.actions.githubusercontent.com' "$f"
-  [ "$(grep -c '^cosign verify "ghcr.io/astawiany/' "$f")" = "3" ]
+  [ "$(grep -c '^cosign verify "ghcr.io/astawiany/' "$f")" = "4" ]
   [ "$(grep -c -- '--certificate-identity-regexp "$IDENTITY"' "$f")" = "2" ]
-  [ "$(grep -c -- '--certificate-oidc-issuer "$ISSUER"' "$f")" = "3" ]
+  [ "$(grep -c -- '--certificate-oidc-issuer "$ISSUER"' "$f")" = "4" ]
   # exact identity of a known version, in addition to the anchored regexp
   grep -qF -- '--certificate-identity "https://github.com/astawiany/fleet-in-a-repo/.github/workflows/release.yml@refs/tags/chart-v$VERSION"' "$f"
+  # ... for both the image and the chart
+  [ "$(grep -cF -- '--certificate-identity "https://github.com/astawiany/fleet-in-a-repo/.github/workflows/release.yml@refs/tags/chart-v$VERSION"' "$f")" = "2" ]
   grep -qF "fleet-demo@\$DIGEST\" --format '{{json .SBOM}}'" "$f"
   grep -qF "fleet-demo@\$DIGEST\" --format '{{json .Provenance}}'" "$f"
   grep -qF 'helm pull oci://ghcr.io/astawiany/charts/demo' "$f"
