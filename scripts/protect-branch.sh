@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Apply branch protection on main and the test/prod GitHub Environments with required reviewers.
+# Apply branch protection on main and the test/prod/release GitHub Environments with required reviewers.
 # Usage: scripts/protect-branch.sh [--dry-run] --repo owner/name --reviewers login[,login...]
-#          [--branch main] [--approvals N] [--enforce-admins]
+#          [--branch main] [--approvals N] [--enforce-admins] [--protect-tags]
 #   --dry-run        print the exact gh api calls and execute nothing (--repo defaults to astawiany/fleet-in-a-repo)
 #   --repo           required for a real run; there is no default and it never runs implicitly
 #   --reviewers      comma-separated GitHub logins for the environments (or env PROTECT_REVIEWERS)
@@ -9,7 +9,11 @@
 #                    code-owner review is required too. A solo owner cannot approve their own PR:
 #                    use 0 (the status checks still gate merges); see .github/README.md.
 #   --enforce-admins apply the rules to admins as well (default off, so an owner is never locked out)
-# Required status checks are the job ids of .github/workflows/validate.yml.
+#   --protect-tags   also create (or update) the tag ruleset "release-tags": only repository admins
+#                    may create, move or delete chart-v* tags, which trigger release.yml
+# Required status checks are the job ids of .github/workflows/validate.yml, except the jobs in
+# OPTIONAL_JOBS (they depend on external vulnerability databases and must not block merges).
+# The release Environment only accepts deployments from chart-v* tags.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,6 +22,8 @@ repo=""
 branch=main
 approvals=1
 enforce_admins=false
+protect_tags=0
+OPTIONAL_JOBS="security"
 reviewers="${PROTECT_REVIEWERS:-}"
 
 while [ $# -gt 0 ]; do
@@ -28,6 +34,7 @@ while [ $# -gt 0 ]; do
     --branch) [ $# -ge 2 ] || { echo "protect-branch: --branch needs a value" >&2; exit 2; }; branch="$2"; shift 2 ;;
     --approvals) [ $# -ge 2 ] || { echo "protect-branch: --approvals needs a number" >&2; exit 2; }; approvals="$2"; shift 2 ;;
     --enforce-admins) enforce_admins=true; shift ;;
+    --protect-tags) protect_tags=1; shift ;;
     *) echo "protect-branch: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
@@ -68,7 +75,10 @@ for l in "${logins[@]}"; do
   entries="${entries:+$entries, }{ \"type\": \"User\", \"id\": $id }"
 done
 
-checks_json="$(yq -o=json -I=0 '[.jobs | keys | .[]]' "$ROOT/.github/workflows/validate.yml")"
+# shellcheck disable=SC2016 # $opt and $j are yq variables
+checks_json="$(OPTIONAL="$OPTIONAL_JOBS" yq -o=json -I=0 \
+  '(strenv(OPTIONAL) | split(" ")) as $opt | [.jobs | keys | .[] | select(. as $j | $opt | contains([$j]) | not)]' \
+  "$ROOT/.github/workflows/validate.yml")"
 protection="$(cat << JSON
 {
   "required_status_checks": { "strict": true, "contexts": $checks_json },
@@ -78,6 +88,27 @@ protection="$(cat << JSON
 }
 JSON
 )"
+
+# RepositoryRole 5 is the built-in admin role: only admins can create, move or delete chart-v* tags.
+ruleset='{
+  "name": "release-tags",
+  "target": "tag",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["refs/tags/chart-v*"], "exclude": [] } },
+  "rules": [ { "type": "creation" }, { "type": "update" }, { "type": "deletion" } ],
+  "bypass_actors": [ { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" } ]
+}'
+
+# Read-only lookups that make re-runs idempotent (before the first run they find nothing).
+tag_policy_id=""
+ruleset_id=""
+if [ "$dry" -eq 0 ]; then
+  tag_policy_id="$(gh api "repos/$repo/environments/release/deployment-branch-policies" \
+    --jq '.branch_policies[] | select(.type == "tag" and .name == "chart-v*") | .id' 2> /dev/null || true)"
+  if [ "$protect_tags" -eq 1 ]; then
+    ruleset_id="$(gh api "repos/$repo/rulesets" --jq '.[] | select(.name == "release-tags") | .id')"
+  fi
+fi
 
 # run_gh <stdin-body|-> args...: print the call; execute only outside dry-run.
 call() { # body, then gh api args
@@ -97,3 +128,21 @@ call "$protection" --method PUT "repos/$repo/branches/$branch/protection"
 for env in test prod; do
   call "{ \"reviewers\": [ $entries ], \"deployment_branch_policy\": null }" --method PUT "repos/$repo/environments/$env"
 done
+
+# release: same reviewers; deployments only from refs matching the chart-v* tag policy.
+call "{ \"reviewers\": [ $entries ], \"deployment_branch_policy\": { \"protected_branches\": false, \"custom_branch_policies\": true } }" \
+  --method PUT "repos/$repo/environments/release"
+if [ -z "$tag_policy_id" ]; then
+  call '{ "name": "chart-v*", "type": "tag" }' --method POST "repos/$repo/environments/release/deployment-branch-policies"
+fi
+
+if [ "$protect_tags" -eq 1 ]; then
+  if [ "$dry" -eq 1 ]; then
+    echo "# release-tags: POST creates it; a re-run updates the existing ruleset with PUT repos/$repo/rulesets/<id>"
+  fi
+  if [ -n "$ruleset_id" ]; then
+    call "$ruleset" --method PUT "repos/$repo/rulesets/$ruleset_id"
+  else
+    call "$ruleset" --method POST "repos/$repo/rulesets"
+  fi
+fi

@@ -359,6 +359,7 @@ step_idx() { yq ".jobs.$1.steps | to_entries | map(select(.value.run != null and
   f="$WF/validate.yml"
   [ "$(yq '.jobs | has("security")' "$f")" = "true" ]
   [ "$(yq '.jobs.security.steps[] | select(.run != null) | select(.run | contains("scripts/security-scan.sh")) | .name' "$f")" != "" ]
+  grep -q 'OPTIONAL_JOBS="security"' "$ROOT/scripts/protect-branch.sh"
   # smoke does not wait for it
   [[ "$(yq '.jobs.smoke.needs | join(",")' "$f")" != *security* ]] || false
 }

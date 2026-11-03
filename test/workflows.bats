@@ -232,9 +232,32 @@ STUB
   [[ "$output" == *'"enforce_admins": false'* ]] || false
   [[ "$output" == *'"required_approving_review_count": 1'* ]] || false
   [[ "$output" == *'"require_code_owner_reviews": true'* ]] || false
-  # required checks are exactly the validate.yml job ids
+  # required checks are exactly the validate.yml job ids, minus the optional security job
   for j in lint validate test smoke; do [[ "$output" == *"\"$j\""* ]] || { echo "missing check $j"; false; }; done
+  [[ "$output" == *'"contexts": ["lint","validate","test","smoke"]'* ]] || { echo "$output" | grep contexts; false; }
   [[ "$output" == *"alice"* && "$output" == *"bob"* ]] || false
+  # the release Environment: same reviewers, deployments only from chart-v* tags
+  [[ "$output" == *"gh api --method PUT repos/acme/fleet/environments/release"* ]] || false
+  [ "$(printf '%s\n' "$output" | grep -c '"<id of alice: gh api users/alice --jq .id>"')" = "3" ]
+  [[ "$output" == *'"deployment_branch_policy": { "protected_branches": false, "custom_branch_policies": true }'* ]] || false
+  [[ "$output" == *"gh api --method POST repos/acme/fleet/environments/release/deployment-branch-policies"* ]] || false
+  [[ "$output" == *'{ "name": "chart-v*", "type": "tag" }'* ]] || false
+  # no tag ruleset unless asked for
+  [[ "$output" != *"rulesets"* ]] || false
+}
+
+@test "protect-branch --protect-tags prints the chart-v* tag ruleset (admins only), dry-run never calls gh" {
+  stub_gh
+  PATH="$WORK/bin:$PATH" run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers alice --protect-tags
+  [ "$status" -eq 0 ]
+  [ ! -e "$WORK/gh.calls" ] || { cat "$WORK/gh.calls"; false; }
+  [[ "$output" == *"gh api --method POST repos/acme/fleet/rulesets --input -"* ]] || false
+  body="$(printf '%s\n' "$output" | sed -n '/repos\/acme\/fleet\/rulesets --input/,/^JSON$/p' | sed '1d;$d')"
+  [ "$(echo "$body" | yq -p=json '.target')" = "tag" ]
+  [ "$(echo "$body" | yq -p=json '.enforcement')" = "active" ]
+  [ "$(echo "$body" | yq -p=json '.conditions.ref_name.include | join(",")')" = "refs/tags/chart-v*" ]
+  [ "$(echo "$body" | yq -p=json '[.rules[].type] | sort | join(",")')" = "creation,deletion,update" ]
+  [ "$(echo "$body" | yq -p=json -o=json -I=0 '.bypass_actors')" = '[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"always"}]' ]
 }
 
 @test "protect-branch --approvals 0 and --enforce-admins (solo owner and strict team setups)" {
@@ -271,10 +294,11 @@ STUB
   run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers ", ,"
   [ "$status" -eq 2 ]
   [[ "$output" == *"no valid reviewers"* ]] || false
-  # blank entries between real ones are dropped: two reviewers per environment, none unresolved
+  # blank entries between real ones are dropped: two reviewers per environment (test, prod,
+  # release), none unresolved
   run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers "alice,,bob"
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | grep -o '"type": "User"' | wc -l | tr -d ' ')" = "4" ]
+  [ "$(printf '%s\n' "$output" | grep -o '"type": "User"' | wc -l | tr -d ' ')" = "6" ]
   [[ "$output" != *"<id of :"* ]] || false
 }
 

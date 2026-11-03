@@ -1,7 +1,7 @@
 # GitHub setup
 
 Run `scripts/protect-branch.sh --dry-run --repo astawiany/fleet-in-a-repo --reviewers login1,login2` to preview the
-branch protection and the `test` / `prod` Environments (drop `--dry-run` to apply).
+branch protection and the `test` / `prod` / `release` Environments (drop `--dry-run` to apply).
 
 Defaults: one approving code-owner review, `validate.yml` checks required, rules not enforced on
 admins. Options:
@@ -9,6 +9,9 @@ admins. Options:
 - `--approvals N` (0-6, default 1): approving reviews required. With 1 or more, a code-owner review
   is required too.
 - `--enforce-admins`: apply the rules to admins as well (off by default).
+- `--protect-tags`: also create the tag ruleset `release-tags` (Settings > Rules > Rulesets): only
+  repository admins may create, move or delete `chart-v*` tags, which trigger `release.yml`.
+  Re-running updates the existing ruleset.
 
 Solo owner: GitHub never lets authors approve their own PR, so with one maintainer use
 `--approvals 0` (merges are still gated by the required checks; code-owner review is then off) and
@@ -30,3 +33,17 @@ self-review" option is enabled.
    the PR opened by the App and the checks run (also on later force-pushes to an open PR).
 3. Gating: PR review + `validate.yml` checks (branch protection), and Environment approval for the
    `test` / `prod` promote jobs.
+
+## Releases (release.yml)
+
+- The `release` Environment gets the same required reviewers as `test` / `prod` and only accepts
+  deployments from `chart-v*` tags (a deployment tag policy). The `image` and `chart` jobs both run
+  in it, so a release needs two approvals, one per job.
+- `--protect-tags` restricts who can push the tag that starts a release (see above). Without it,
+  anyone with write access can push a `chart-v*` tag; the `verify` job still refuses tags that are
+  not on `main`, and the Environment approval still applies.
+- The `security` job of `validate.yml` is not a required check (`OPTIONAL_JOBS` in
+  `scripts/protect-branch.sh`): it depends on vulnerability databases downloaded at run time.
+  `release.yml` runs the same gate as a hard stop before publishing.
+- Making the published packages public is a manual step after the first release:
+  [docs/security.md](../docs/security.md#ghcr-packages).
