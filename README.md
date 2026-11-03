@@ -82,7 +82,7 @@ management cluster; workload clusters still sync from the offline git server.
 | `kind/` | Management cluster config and offline git server |
 | `scripts/` | `make` targets, smoke checks, promotion, CI helpers |
 | `test/` | bats tests |
-| `docs/` | Architecture and ADRs |
+| `docs/` | Architecture, ADRs, release security |
 | `.github/` | Workflows, CODEOWNERS, setup notes |
 
 ## How promotion works
@@ -134,8 +134,12 @@ plus the five below (`scripts/smoke.d/`). With the lite profile that is 2 cluste
 
 ## CI and governance
 
-`validate.yml` (lint, validate, test, lite smoke on a throwaway kind cluster), `promote.yml`,
-`release.yml`; branch protection and Environments via `scripts/protect-branch.sh`; CODEOWNERS.
+`validate.yml` (lint, validate, test, lite smoke on a throwaway kind cluster, plus a non-required
+`security` scan), `promote.yml`, `release.yml`; branch protection and Environments via
+`scripts/protect-branch.sh`; CODEOWNERS.
+Published artifacts (image and chart on ghcr.io): scanned before push, signed with cosign, image
+pinned by digest in the chart. How to verify them, the release procedure and the threat model:
+[docs/security.md](docs/security.md).
 Setup steps and the `GITHUB_TOKEN` limitation: [.github/README.md](.github/README.md).
 `.github/CODEOWNERS` assigns every path to `@astawiany`; add teams or users there as needed.
 Flux commit-status notifications are provided as opt-in manifests in
