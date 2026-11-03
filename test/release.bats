@@ -28,6 +28,7 @@ case "\$1 \$2 \$3" in
     ref="\${@: -1}"; f="$WORK/raw/\$(printf '%s' "\$ref" | tr '/:@' '___')"
     if [ -f "\$f" ]; then cat "\$f"; else cat "$WORK/raw.err" >&2 2> /dev/null; exit 1; fi ;;
   "buildx build "*) exit 0 ;;
+  "buildx version "*) exit "\${DOCKER_BUILDX_RC:-0}" ;;
 esac
 case "\$1" in
   save) cat "$WORK/save.tar" ;;
@@ -100,7 +101,8 @@ ancestor_repo() {
     rel check-absent ghcr.io/o/fleet-demo:2.0.0
     [ "$status" -eq 0 ] || { echo "'$msg': $output"; false; }
   done
-  for msg in "denied" "failed to fetch anonymous token: 403 Forbidden" "dial tcp: lookup ghcr.io: no such host" ""; do
+  for msg in "denied" "failed to fetch anonymous token: 403 Forbidden" "dial tcp: lookup ghcr.io: no such host" "" \
+    "bash: docker: command not found" "ERROR: ghcr.io/o/other:2.0.0: not found" "ERROR: file not found"; do
     printf '%s\n' "$msg" > "$WORK/raw.err"
     rel check-absent ghcr.io/o/fleet-demo:2.0.0
     [ "$status" -eq 2 ] || { echo "'$msg' gave $status: $output"; false; }
@@ -386,4 +388,17 @@ step_idx() { yq ".jobs.$1.steps | to_entries | map(select(.value.run != null and
   [ "$(grep -v '^#' "$f" | grep -v '^$' | head -n 1)" = "*" ]
   [ "$(grep '^!' "$f" | sort | tr '\n' ' ')" = '!*.go !go.mod !go.sum ' ]
   grep -qx '\*_test.go' "$f"
+}
+
+@test "check-absent fails closed (exit 2) when docker or buildx is missing or broken" {
+  stub_docker
+  printf 'ERROR: ghcr.io/o/fleet-demo:2.0.0: not found\n' > "$WORK/raw.err"
+  DOCKER_BUILDX_RC=1 PATH="$WORK/bin:$PATH" run "$ROOT/scripts/release.sh" check-absent ghcr.io/o/fleet-demo:2.0.0
+  [ "$status" -eq 2 ] || { echo "$status: $output"; false; }
+  [[ "$output" == *"not usable"* ]] || false
+  # no docker on PATH at all: "command not found" is not "not published"
+  mkdir "$WORK/minpath"
+  for c in bash env dirname; do ln -s "$(command -v "$c")" "$WORK/minpath/$c"; done
+  PATH="$WORK/minpath" run "$ROOT/scripts/release.sh" check-absent ghcr.io/o/fleet-demo:2.0.0
+  [ "$status" -eq 2 ] || { echo "$status: $output"; false; }
 }

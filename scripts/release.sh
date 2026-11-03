@@ -53,11 +53,17 @@ check_ancestor() {
 check_absent() {
   local ref="${1:-}" out
   [ -n "$ref" ] || die "check-absent needs an image reference"
+  # a missing or broken docker/buildx must not read as "not published"
+  if ! docker buildx version > /dev/null 2>&1; then
+    echo "release: docker buildx is not usable, cannot check whether $ref exists" >&2
+    exit 2
+  fi
   if out="$(docker buildx imagetools inspect --raw "$ref" 2>&1)"; then
     die "$ref already exists: refusing to overwrite a published version (bump the version instead)"
   fi
   case "$out" in
-    *"not found"* | *"manifest unknown"* | *MANIFEST_UNKNOWN* | *"name unknown"* | *NAME_UNKNOWN*)
+    # only a registry answer about this very ref counts as "absent"
+    *"$ref: not found"* | *"manifest unknown"* | *MANIFEST_UNKNOWN* | *NAME_UNKNOWN*)
       echo "release: $ref does not exist yet" ;;
     *)
       echo "release: cannot tell whether $ref exists (registry said: $out)" >&2
