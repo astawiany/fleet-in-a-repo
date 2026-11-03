@@ -19,6 +19,9 @@ setup() {
   done
   make_docker 17179869184 # 16 GiB
   unset FLEET_PROFILE
+  # keep results independent of the host's real inotify limit (Linux CI runners default to 128)
+  echo 1024 > "$BATS_TEST_TMPDIR/inotify.default"
+  export FLEET_INOTIFY_FILE="$BATS_TEST_TMPDIR/inotify.default"
 }
 
 make_docker() {
