@@ -99,7 +99,9 @@ flags such as `FEATURE_NEW_BANNER`: code ships dark and a one-line PR enables it
 
 Each workload cluster runs Prometheus and Grafana. Dashboards: `Platform health` (Flux objects,
 nodes, pods, capacity) and `Demo SLIs` (latency, errors). SLO burn-rate alerts:
-`DemoErrorBudgetBurnFast` and `DemoErrorBudgetBurnSlow`.
+`DemoErrorBudgetBurnFast` and `DemoErrorBudgetBurnSlow`. The SLIs count application requests only
+(health probes and metric scrapes are not instrumented), so the `Demo SLIs` panels show "No data"
+until something calls the app; `make smoke` sends 200 `GET /feature` requests per cluster.
 
 Grafana is a ClusterIP Service with the chart's default admin credentials. That is acceptable only
 for this local demo. Reach it with `kubectl port-forward` and never expose it through the gateway.

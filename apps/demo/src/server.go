@@ -34,18 +34,22 @@ func newHandler(mode string, newBanner bool, reg *prometheus.Registry) http.Hand
 	}, []string{})
 	reg.MustRegister(requests, duration)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("ok"))
-	})
-	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	// App routes only are instrumented: kubelet probes (/healthz) and Prometheus scrapes
+	// (/metrics) would otherwise dominate the Demo SLIs and burn-rate alerts.
+	app := http.NewServeMux()
 	if mode != "worker" {
-		mux.HandleFunc("/feature", func(w http.ResponseWriter, _ *http.Request) {
+		app.HandleFunc("/feature", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]bool{"new_banner": newBanner})
 		})
 	}
 
-	return promhttp.InstrumentHandlerDuration(duration,
-		promhttp.InstrumentHandlerCounter(requests, mux))
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	})
+	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	mux.Handle("/", promhttp.InstrumentHandlerDuration(duration,
+		promhttp.InstrumentHandlerCounter(requests, app)))
+	return mux
 }

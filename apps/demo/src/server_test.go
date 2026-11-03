@@ -40,7 +40,7 @@ func TestFeatureFlagOff(t *testing.T) {
 
 func TestMetricsExposeRequestHistogram(t *testing.T) {
 	h := NewHandler("web", false)
-	get(h, "/healthz")
+	get(h, "/feature")
 	body := get(h, "/metrics").Body.String()
 	for _, want := range []string{"http_request_duration_seconds_bucket", `http_requests_total{code="200"}`} {
 		if !strings.Contains(body, want) {
@@ -86,4 +86,47 @@ func TestWorkerIncrementsCounter(t *testing.T) {
 		}
 	}
 	t.Fatal("worker_jobs_total not registered")
+}
+
+// counted sums http_requests_total and the http_request_duration_seconds sample count.
+func counted(t *testing.T, reg *prometheus.Registry) (requests float64, observations uint64) {
+	t.Helper()
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mf := range mfs {
+		for _, m := range mf.GetMetric() {
+			switch mf.GetName() {
+			case "http_requests_total":
+				requests += m.GetCounter().GetValue()
+			case "http_request_duration_seconds":
+				observations += m.GetHistogram().GetSampleCount()
+			}
+		}
+	}
+	return requests, observations
+}
+
+// Probes and scrapes must not feed the Demo SLIs: only app routes are instrumented.
+func TestHealthzAndMetricsAreNotCounted(t *testing.T) {
+	for _, mode := range []string{"web", "api", "worker"} {
+		reg := prometheus.NewRegistry()
+		h := newHandler(mode, false, reg)
+		for i := 0; i < 3; i++ {
+			if get(h, "/healthz").Code != 200 || get(h, "/metrics").Code != 200 {
+				t.Fatalf("%s: healthz/metrics should be served", mode)
+			}
+		}
+		if r, o := counted(t, reg); r != 0 || o != 0 {
+			t.Fatalf("%s: /healthz and /metrics were counted: requests=%v observations=%v", mode, r, o)
+		}
+	}
+	reg := prometheus.NewRegistry()
+	h := newHandler("api", false, reg)
+	get(h, "/feature")
+	get(h, "/nope")
+	if r, o := counted(t, reg); r != 2 || o != 2 {
+		t.Fatalf("app routes: want 2 requests and 2 observations, got %v and %v", r, o)
+	}
 }
