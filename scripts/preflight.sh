@@ -56,7 +56,7 @@ version_warn() {
 }
 version_warn flux "$FLUX_VERSION" flux version --client
 version_warn kind "$KIND_VERSION" kind version
-version_warn clusterctl "$CLUSTERCTL_VERSION" clusterctl version -o short
+version_warn clusterctl "$CLUSTERCTL_VERSION" env CLUSTERCTL_DISABLE_VERSIONCHECK=true clusterctl version -o short
 
 mem_bytes="$(docker info --format '{{.MemTotal}}' 2>/dev/null || true)"
 if ! [[ "$mem_bytes" =~ ^[0-9]+$ ]]; then

@@ -10,6 +10,7 @@ validate:
 
 test:
 	bats test/
+	@if command -v go >/dev/null 2>&1; then cd apps/demo/src && go test ./... && go vet ./...; else echo 'WARNING: go not found, skipping demo app unit tests'; fi
 
 up:
 	scripts/up.sh

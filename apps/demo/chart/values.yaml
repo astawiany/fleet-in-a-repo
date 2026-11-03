@@ -6,10 +6,10 @@ replicas:
 hostname: demo.example.fleet.test
 
 image:
-  # "owner" is a placeholder. Offline, make up builds this name locally and kind-loads it into the
-  # nodes (no registry pull), so any lowercase name works. For the image release.yml publishes, use
-  # ghcr.io/<repository owner, lowercased>/fleet-demo.
-  repository: ghcr.io/owner/fleet-demo
+  # Deliberately not pullable (example.invalid). Offline, make up builds this name locally and
+  # kind-loads it into the nodes (no registry pull). release.yml rewrites it to
+  # ghcr.io/<repository owner, lowercased>/fleet-demo when it packages the chart.
+  repository: example.invalid/fleet-demo
   tag: 0.1.0
 
 features:

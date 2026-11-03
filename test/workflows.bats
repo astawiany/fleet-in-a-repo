@@ -130,8 +130,10 @@ workflows() { ls "$WF"/*.yml; }
   [ "$released" = "${repo##*/}" ] || false
   # the release owner is lowercased (ghcr.io refuses upper case)
   grep -q "owner=\"\$(echo \"\$GITHUB_REPOSITORY_OWNER\" | tr '\[:upper:\]' '\[:lower:\]')\"" "$f"
-  # no personal handle in the chart default: the owner is the documented placeholder
-  [ "$(echo "$repo" | cut -d/ -f2)" = "owner" ] || false
+  # the chart default must not be a pullable registry name (no personal handle, no real namespace)
+  [ "${repo%%/*}" = "example.invalid" ] || false
+  # the published chart gets the real image name substituted at release time
+  grep -q 'image.repository = "ghcr.io/"' "$f"
   grep -q 'release.yml' "$values"
 }
 
