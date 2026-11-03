@@ -65,7 +65,15 @@ image() { # the chart repository with the dev pin
   echo "$repo:$(awk '$1 == "version:" { print $2; exit }' "$ROOT/promotion/versions/dev.yaml")"
 }
 
+# Number of distinct images up.sh builds: one per distinct pinned version among the lite envs
+# (dev and prod), so it is 2 while promotion is in flight and 1 once the pins agree.
+n_images() {
+  { awk '$1 == "version:" { print $2; exit }' "$ROOT/promotion/versions/dev.yaml"
+    awk '$1 == "version:" { print $2; exit }' "$ROOT/promotion/versions/prod.yaml"; } | sort -u | wc -l | tr -d ' '
+}
+
 @test "up labels the demo image with a source hash and rebuilds only when apps/demo/src changes" {
+  n="$(n_images)"
   up
   [ "$status" -eq 0 ]
   run grep -c "^docker build .*--label fleet.src-hash=[0-9a-f]\{12\} .*-t $(image) " "$CALLS"
@@ -73,12 +81,12 @@ image() { # the chart repository with the dev pin
   up
   [ "$status" -eq 0 ]
   run grep -c '^docker build' "$CALLS"
-  [ "$output" -eq 1 ]
+  [ "$output" -eq "$n" ] || false
   echo "// edited" >> "$ROOT/apps/demo/src/main.go"
   up
   [ "$status" -eq 0 ]
   run grep -c '^docker build' "$CALLS"
-  [ "$output" -eq 2 ] || false
+  [ "$output" -eq $((2 * n)) ] || false
   # the image is loaded into the nodes either way; running pods only change on a version bump
   grep -q "^kind load docker-image $(image) " "$CALLS"
 }

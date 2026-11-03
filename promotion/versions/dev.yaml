@@ -5,4 +5,4 @@ kind: PromotionPin
 metadata:
   name: pin-dev
 chart:
-  version: 0.1.0
+  version: 0.1.1
