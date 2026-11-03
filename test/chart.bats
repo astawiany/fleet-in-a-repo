@@ -6,22 +6,18 @@ setup() {
   VALUES="$ROOT/apps/demo/values"
 }
 
-render() { helm template demo "$CHART" -f "$VALUES/$1.yaml" 2>/dev/null; }
+render() { helm template demo "$CHART" -f "$VALUES/$1.yaml"; }
 
 @test "acme-dev renders FEATURE_NEW_BANNER=true and globex-dev renders false" {
-  run bash -c "helm template demo '$CHART' -f '$VALUES/acme-dev.yaml' 2>/dev/null | yq -N 'select(.kind==\"Deployment\") | .spec.template.spec.containers[].env[] | select(.name==\"FEATURE_NEW_BANNER\") | .value' | sort -u"
-  [ "$status" -eq 0 ]
-  [ "$output" = "true" ]
-  run bash -c "helm template demo '$CHART' -f '$VALUES/globex-dev.yaml' 2>/dev/null | yq -N 'select(.kind==\"Deployment\") | .spec.template.spec.containers[].env[] | select(.name==\"FEATURE_NEW_BANNER\") | .value' | sort -u"
-  [ "$status" -eq 0 ]
-  [ "$output" = "false" ]
+  q='select(.kind=="Deployment") | .spec.template.spec.containers[].env[] | select(.name=="FEATURE_NEW_BANNER") | .value'
+  [ "$(render acme-dev | yq -N "$q" | sort -u)" = "true" ]
+  [ "$(render globex-dev | yq -N "$q" | sort -u)" = "false" ]
 }
 
 @test "prod renders replicas 2 for web and dev renders 1" {
-  run bash -c "helm template demo '$CHART' -f '$VALUES/acme-prod.yaml' 2>/dev/null | yq -N 'select(.kind==\"Deployment\" and .metadata.name==\"demo-web\") | .spec.replicas'"
-  [ "$output" = "2" ]
-  run bash -c "helm template demo '$CHART' -f '$VALUES/acme-dev.yaml' 2>/dev/null | yq -N 'select(.kind==\"Deployment\" and .metadata.name==\"demo-web\") | .spec.replicas'"
-  [ "$output" = "1" ]
+  q='select(.kind=="Deployment" and .metadata.name=="demo-web") | .spec.replicas'
+  [ "$(render acme-prod | yq -N "$q")" = "2" ]
+  [ "$(render acme-dev | yq -N "$q")" = "1" ]
 }
 
 @test "renders 3 Deployments and 2 Services" {
@@ -37,7 +33,8 @@ render() { helm template demo "$CHART" -f "$VALUES/$1.yaml" 2>/dev/null; }
     [ "$(echo "$out" | yq -N 'select(.kind=="Deployment") | .spec.template.spec.containers[].securityContext.allowPrivilegeEscalation' | grep -c '^false$')" = "3" ]
     [ "$(echo "$out" | yq -N 'select(.kind=="Deployment") | .spec.template.spec.containers[].securityContext.readOnlyRootFilesystem' | grep -c '^true$')" = "3" ]
     [ "$(echo "$out" | yq -N 'select(.kind=="Deployment") | .spec.template.spec.containers[].securityContext.capabilities.drop[]' | grep -c '^ALL$')" = "3" ]
-    ! echo "$out" | grep -q 'privileged: true'
+    run grep -q 'privileged: true' <<<"$out"
+    [ "$status" -ne 0 ]
   done
 }
 
@@ -49,10 +46,15 @@ render() { helm template demo "$CHART" -f "$VALUES/$1.yaml" 2>/dev/null; }
   [ "$(echo "$out" | yq -N 'select(.kind=="Deployment") | .metadata.labels."app.kubernetes.io/part-of"' | sort -u)" = "fleet-demo" ]
 }
 
-@test "a NetworkPolicy exists" {
-  run bash -c "helm template demo '$CHART' -f '$VALUES/acme-dev.yaml' 2>/dev/null | yq -N 'select(.kind==\"NetworkPolicy\") | .metadata.name'"
-  [ "$status" -eq 0 ]
-  [ -n "$output" ]
+@test "default-deny and web-to-api NetworkPolicies exist" {
+  out="$(render acme-dev)"
+  # default-deny: selects all release pods, Ingress type, no ingress rules
+  [ "$(echo "$out" | yq -N 'select(.kind=="NetworkPolicy" and .metadata.name=="demo-default-deny") | .spec.policyTypes[0]')" = "Ingress" ]
+  [ "$(echo "$out" | yq -N 'select(.kind=="NetworkPolicy" and .metadata.name=="demo-default-deny") | .spec.ingress')" = "null" ]
+  # api accepts ingress from web pods
+  api="$(echo "$out" | yq -N 'select(.kind=="NetworkPolicy" and .metadata.name=="demo-allow-web-to-api")')"
+  [ "$(echo "$api" | yq -N '.spec.podSelector.matchLabels."app.kubernetes.io/component"')" = "api" ]
+  [ "$(echo "$api" | yq -N '.spec.ingress[0].from[0].podSelector.matchLabels."app.kubernetes.io/component"')" = "web" ]
 }
 
 @test "hostname from values appears in the HTTPRoute" {
