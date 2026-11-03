@@ -51,7 +51,10 @@ case "$*" in
 esac'
   stub curl '
 case "$*" in
-  *"/api/dashboards/uid/"*) printf 200 ;;
+  *"/api/dashboards/uid/"*)
+    # credentials must come from a config on stdin (-K -), never from argv
+    case "$*" in *"-K -"*) cat >> "$STATE/curl-stdin" ;; esac
+    printf 200 ;;
   *"/feature"*)
     # curl-fail: connection refused; curl still writes its -w line, then exits 7
     if [ -f "$STATE/curl-fail" ]; then echo "000 0.001"; exit 7; fi
@@ -151,6 +154,18 @@ script() { # script [args...]
   script smoke.sh
   [ "$status" -ne 0 ]
   [[ "$output" == *"FAIL observability acme-dev"*"serviceMonitor/demo/demo-api/0"* ]] || false
+}
+
+@test "smoke observability passes Grafana credentials on stdin, never in curl argv" {
+  kubeconfigs
+  script smoke.sh
+  [ "$status" -eq 0 ]
+  # fixture grafana-secret.json: admin / secret
+  run grep -c '/api/dashboards/uid/' "$CALLS"
+  [ "$output" -ge 2 ] || false
+  run grep -E '^curl .*(secret|-u |--user)' "$CALLS"
+  [ "$status" -eq 1 ] || { echo "credentials in argv: $output"; false; }
+  grep -qx 'user = "admin:secret"' "$STATE/curl-stdin"
 }
 
 @test "smoke security fails on a privileged pod and on a missing default-deny policy" {

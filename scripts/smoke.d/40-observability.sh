@@ -43,7 +43,7 @@ targets_problems() {
 
 # dashboards_problems: print the dashboards Grafana does not serve, nothing when all are there.
 dashboards_problems() {
-  local secret user pass port="" missing="" uid code
+  local secret user pass creds port="" missing="" uid code
   if ! secret="$(kubectl -n "$NS" get secret "$GRAFANA" -o json 2>&1)"; then
     echo "grafana secret: $(head -n 1 <<< "$secret")"
     return
@@ -64,8 +64,11 @@ dashboards_problems() {
     echo "grafana port-forward failed: $(head -n 1 "$tmp/pf.log")"
     return
   fi
+  # Credentials go to curl as a config on stdin (-K -), never in argv (visible in ps); \ and "
+  # are escaped for the config file's quoted string.
+  creds="$(printf '%s:%s' "$user" "$pass" | sed 's/\\/\\\\/g; s/"/\\"/g')"
   for uid in $DASHBOARDS; do
-    code="$(curl -s -o /dev/null --max-time 10 -w '%{http_code}' -u "$user:$pass" \
+    code="$(printf 'user = "%s"\n' "$creds" | curl -K - -s -o /dev/null --max-time 10 -w '%{http_code}' \
       "http://127.0.0.1:$port/api/dashboards/uid/$uid")"
     [ "$code" = 200 ] || missing="$missing${missing:+; }dashboard $uid missing (HTTP $code)"
   done
