@@ -16,3 +16,10 @@ replacements:
           name: demo
         fieldPaths:
           - spec.chart.spec.version
+      - select:
+          kind: HelmRelease
+          name: demo
+        fieldPaths:
+          - spec.values.image.tag
+        options:
+          create: true

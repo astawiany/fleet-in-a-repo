@@ -26,6 +26,13 @@ if [ -z "$from_v" ] || [ "$from_v" = null ]; then
   echo "FAIL: $DIR/$1.yaml has no chart.version" >&2
   exit 1
 fi
+SEMVER='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+for pair in "$1:$from_v" "$2:$to_v"; do
+  if ! printf '%s\n' "${pair#*:}" | grep -Eq "$SEMVER"; then
+    echo "FAIL: $DIR/${pair%%:*}.yaml has malformed chart.version '${pair#*:}' (expected X.Y.Z)" >&2
+    exit 1
+  fi
+done
 if [ "$from_v" = "$to_v" ]; then
   echo "no change"
   exit 0

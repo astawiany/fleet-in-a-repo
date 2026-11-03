@@ -60,3 +60,43 @@ teardown() { rm -rf "$WORK"; }
   [ "$(echo "$out" | yq -N 'select(.kind=="HelmRelease") | .spec.valuesFrom[0].name')" = "demo-values-acme-prod" ]
   echo "$out" | yq -N 'select(.kind=="ConfigMap") | .data."values.yaml"' | grep -q 'replicas'
 }
+
+@test "HelmRelease for acme-prod sets values.image.tag from prod.yaml, not another env" {
+  mkdir -p "$WORK/repo/apps" "$WORK/repo/promotion"
+  cp -R "$ROOT/apps/demo" "$WORK/repo/apps/demo"
+  cp -R "$ROOT/promotion/." "$WORK/repo/promotion/"
+  V=1.0.0 yq -i '.chart.version = strenv(V)' "$WORK/repo/promotion/versions/dev.yaml"
+  V=7.7.7 yq -i '.chart.version = strenv(V)' "$WORK/repo/promotion/versions/prod.yaml"
+  out="$(kustomize build "$WORK/repo/apps/demo/flux/acme-prod")"
+  [ "$(echo "$out" | yq -N 'select(.kind=="HelmRelease") | .spec.values.image.tag')" = "7.7.7" ]
+  # values ConfigMaps must not set image.tag (spec.values would override it silently)
+  [ "$(yq '.image.tag' "$ROOT"/apps/demo/values/acme-prod.yaml)" = null ]
+  out="$(kustomize build "$WORK/repo/apps/demo/flux/acme-dev")"
+  [ "$(echo "$out" | yq -N 'select(.kind=="HelmRelease") | .spec.values.image.tag')" = "1.0.0" ]
+}
+
+@test "promote with a missing pin file fails naming the file" {
+  rm promotion/versions/test.yaml
+  run scripts/promote.sh dev test
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"test.yaml"* ]] || false
+}
+
+@test "promote with a malformed version fails naming the file and value" {
+  printf 'chart:\n  version: latest\n' > promotion/versions/dev.yaml
+  run scripts/promote.sh dev test
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"dev.yaml"* && "$output" == *"latest"* ]] || false
+  printf 'chart:\n  version: 1.2.0\n' > promotion/versions/dev.yaml
+  printf 'chart:\n  version: v1\n' > promotion/versions/test.yaml
+  run scripts/promote.sh dev test
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"test.yaml"* && "$output" == *"v1"* ]] || false
+}
+
+@test "promote with the wrong argument count exits 2" {
+  run scripts/promote.sh dev
+  [ "$status" -eq 2 ]
+  run scripts/promote.sh dev test prod
+  [ "$status" -eq 2 ]
+}

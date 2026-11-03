@@ -1,5 +1,5 @@
 # Per customer/env values as ConfigMaps (namespace flux-system, read by HelmRelease valuesFrom).
-# Lives here, not in , because kustomize cannot load files outside its root.
+# Lives here, not in a separate overlay dir, because kustomize cannot load files outside its root.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 generatorOptions:

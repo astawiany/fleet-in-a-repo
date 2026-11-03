@@ -1,3 +1,5 @@
+# There are no *-test clusters in 1a: the test pin is a staging gate (PR + `test` Environment
+# review) whose value no cluster consumes yet.
 # Promotion pin for the test environment; read by apps/demo/flux/*-test via a Kustomize replacement.
 # Kind is a repo-local marker (never applied: the flux overlays delete it after the replacement).
 apiVersion: fleet.example/v1
