@@ -7,6 +7,7 @@ metadata:
   labels:
     fleet/customer: acme
     fleet/environment: prod
+    fleet/cni: kindnet
 spec:
   clusterNetwork:
     pods:
@@ -17,8 +18,8 @@ spec:
   topology:
     classRef:
       name: fleet-capd
-    # kindest/node default for kind 0.30.0
-    version: v1.34.0
+    # Substituted from versions.env by mgmt-up.sh (Flux postBuild substitution uses the same syntax).
+    version: ${WORKLOAD_K8S_VERSION}
     controlPlane:
       replicas: 1
     workers:

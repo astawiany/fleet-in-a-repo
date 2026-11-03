@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 # Create or converge the management cluster (idempotent):
-#   1. kind cluster fleet-mgmt (kind/mgmt.yaml)
+#   1. kind cluster fleet-mgmt (kind/mgmt.yaml, node image KIND_NODE_IMAGE)
 #   2. Cluster API core/kubeadm + CAPD providers at CLUSTERCTL_VERSION
-#   3. Flux, synced to this repo at clusters/management:
-#        GITHUB_REPOSITORY=owner/repo set -> flux bootstrap github (needs GITHUB_TOKEN)
+#   3. Flux FLUX_VERSION, synced to this repo at clusters/management:
+#        FLEET_FLUX_GITHUB=owner/repo set -> flux bootstrap github --personal --token-auth
+#          (explicit opt-in, needs GITHUB_TOKEN; GITHUB_REPOSITORY alone never triggers it)
 #        otherwise (offline default)      -> git HEAD is pushed to the bare repo
 #          $WORK/git/fleet.git, served read-only over smart HTTP by the fleet-git
 #          container on the kind Docker network; GitRepository flux-system points there.
 #          Only committed changes are synced; re-run after committing.
-#   4. capi/ ClusterClass + the workload Clusters of the active profile (lib.sh customers())
+#   4. capi/ namespace, ClusterClass, kindnet CNI ClusterResourceSet and the workload
+#      Clusters of the active profile (lib.sh customers()); ${VAR} placeholders are
+#      substituted from versions.env into $WORK/rendered/ before kubectl apply.
 #   5. workload kubeconfigs exported to $WORK/kubeconfigs/<name>.yaml, with the API server
 #      rewritten to the load balancer's published localhost port (reachable on macOS too)
-# Env: FLEET_PROFILE (full|lite), FLEET_WORK_DIR (default <repo>/.work),
+# Versions: versions.env (KIND_NODE_IMAGE, CLUSTERCTL_VERSION, FLUX_VERSION,
+#   WORKLOAD_K8S_VERSION, KINDNETD_IMAGE).
+# Env: FLEET_FLUX_GITHUB (see 3), FLEET_PROFILE (full|lite), FLEET_WORK_DIR (default <repo>/.work),
 #      FLEET_WAIT_TIMEOUT seconds to wait for each workload kubeconfig (default 600).
 # All kubectl/clusterctl/flux calls use the dedicated kubeconfig $WORK/mgmt.kubeconfig.
 set -euo pipefail
@@ -29,7 +34,7 @@ ENVS="dev prod"
 BRANCH=main
 FLUX_PATH=clusters/management
 GIT_CONTAINER=fleet-git
-GIT_IMAGE=fleet-git-server:local
+GIT_SERVER_DIR="$ROOT/kind/git-server"
 WORK="${FLEET_WORK_DIR:-$ROOT/.work}"
 TIMEOUT="${FLEET_WAIT_TIMEOUT:-600}"
 export KUBECONFIG="$WORK/mgmt.kubeconfig"
@@ -49,6 +54,23 @@ retry() {
   done
 }
 
+# Hash of kind/git-server (file names + contents): changing it yields a new image tag.
+dir_hash() {
+  (cd "$1" && find . -type f | LC_ALL=C sort | while IFS= read -r f; do
+    echo "$f"
+    cat "$f"
+  done) | shasum -a 256 | cut -c1-12
+}
+
+# render FILE: copy capi/FILE to $WORK/rendered/FILE with ${VAR} placeholders from versions.env.
+render() {
+  local out="$WORK/rendered/$1"
+  mkdir -p "$(dirname "$out")"
+  sed -e "s|\${WORKLOAD_K8S_VERSION}|$WORKLOAD_K8S_VERSION|g" \
+    -e "s|\${KINDNETD_IMAGE}|$KINDNETD_IMAGE|g" "$ROOT/capi/$1" > "$out"
+  echo "$out"
+}
+
 cust="$(customers)"
 names=""
 for c in $cust; do
@@ -63,7 +85,7 @@ mkdir -p "$WORK/kubeconfigs"
 if kind get clusters 2> /dev/null | grep -qx "$MGMT"; then
   log "kind cluster $MGMT exists"
 else
-  kind create cluster --config "$ROOT/kind/mgmt.yaml" --kubeconfig "$KUBECONFIG"
+  kind create cluster --config "$ROOT/kind/mgmt.yaml" --image "$KIND_NODE_IMAGE" --kubeconfig "$KUBECONFIG"
 fi
 kind export kubeconfig --name "$MGMT" --kubeconfig "$KUBECONFIG" > /dev/null 2>&1
 
@@ -77,15 +99,17 @@ else
 fi
 
 # 3. Flux
-if [ -n "${GITHUB_REPOSITORY:-}" ]; then
-  # --personal: the repository belongs to a user account, not an organization.
-  flux bootstrap github --owner "${GITHUB_REPOSITORY%%/*}" --repository "${GITHUB_REPOSITORY#*/}" \
-    --branch "$BRANCH" --path "$FLUX_PATH" --personal
+if [ -n "${FLEET_FLUX_GITHUB:-}" ]; then
+  # --personal: the repository belongs to a user account; --token-auth: clone over HTTPS with
+  # GITHUB_TOKEN instead of creating a deploy key.
+  flux bootstrap github --version "v$FLUX_VERSION" --owner "${FLEET_FLUX_GITHUB%%/*}" \
+    --repository "${FLEET_FLUX_GITHUB#*/}" --branch "$BRANCH" --path "$FLUX_PATH" \
+    --personal --token-auth
 else
   if kubectl -n flux-system get deployment source-controller > /dev/null 2>&1; then
     log "Flux already installed"
   else
-    flux install
+    flux install --version "v$FLUX_VERSION"
   fi
 
   bare="$WORK/git/fleet.git"
@@ -96,12 +120,17 @@ else
   git -C "$ROOT" push -q --force "$bare" "HEAD:refs/heads/$BRANCH"
   git -C "$bare" symbolic-ref HEAD "refs/heads/$BRANCH"
 
-  if [ -z "$(docker ps -q --filter "name=^${GIT_CONTAINER}\$")" ]; then
-    docker rm -f "$GIT_CONTAINER" > /dev/null 2>&1 || true
-    docker image inspect "$GIT_IMAGE" > /dev/null 2>&1 \
-      || docker build -q -t "$GIT_IMAGE" "$ROOT/kind/git-server" > /dev/null
-    docker run -d --name "$GIT_CONTAINER" --network kind --restart unless-stopped \
-      -v "$WORK/git:/srv/git:ro" "$GIT_IMAGE" > /dev/null
+  git_image="fleet-git-server:$(dir_hash "$GIT_SERVER_DIR")"
+  docker image inspect "$git_image" > /dev/null 2>&1 \
+    || docker build -q -t "$git_image" "$GIT_SERVER_DIR" > /dev/null
+  running="$(docker ps --filter "name=^${GIT_CONTAINER}\$" --filter label=fleet-in-a-repo=1 \
+    --format '{{.Image}}')"
+  if [ "$running" != "$git_image" ]; then
+    if [ -n "$(docker ps -aq --filter "name=^${GIT_CONTAINER}\$" --filter label=fleet-in-a-repo=1)" ]; then
+      docker rm -f -v "$GIT_CONTAINER" > /dev/null
+    fi
+    docker run -d --name "$GIT_CONTAINER" --label fleet-in-a-repo=1 --network kind \
+      --restart unless-stopped -v "$WORK/git:/srv/git:ro" "$git_image" > /dev/null
   fi
 
   flux create source git flux-system --url "http://$GIT_CONTAINER/cgi-bin/git/fleet.git" \
@@ -111,15 +140,20 @@ else
   retry 120 kubectl -n flux-system wait gitrepository/flux-system --for=condition=Ready --timeout=10s
 fi
 
-# 4. ClusterClass and the workload clusters of this profile
-apply=(-f "$ROOT/capi/namespace.yaml" -f "$ROOT/capi/clusterclass/capd-clusterclass.yaml")
+# 4. ClusterClass, CNI and the workload clusters of this profile
+rm -rf "$WORK/rendered"
+apply=()
+for f in namespace.yaml clusterclass/capd-clusterclass.yaml cni/kindnet.yaml; do
+  apply+=(-f "$(render "$f")")
+done
 for n in $names; do
-  apply+=(-f "$ROOT/capi/customers/$n.yaml")
+  apply+=(-f "$(render "customers/$n.yaml")")
 done
 # CAPI webhooks can lag behind --wait-providers on a fresh install.
 retry 120 kubectl apply "${apply[@]}"
 
-# 5. Workload kubeconfigs
+# 5. Workload kubeconfigs (credentials: owner-only files)
+umask 077
 for n in $names; do
   deadline=$((SECONDS + TIMEOUT))
   while :; do

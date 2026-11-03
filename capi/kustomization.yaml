@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - clusterclass/capd-clusterclass.yaml
+  - cni/kindnet.yaml
   - customers/acme-dev.yaml
   - customers/acme-prod.yaml
   - customers/globex-dev.yaml

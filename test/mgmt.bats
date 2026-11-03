@@ -12,7 +12,7 @@ setup() {
   export FLEET_WORK_DIR="$BATS_TEST_TMPDIR/work"
   mkdir -p "$STUBS" "$STATE"
   : > "$CALLS"
-  unset FLEET_PROFILE GITHUB_REPOSITORY KUBECONFIG
+  unset FLEET_PROFILE GITHUB_REPOSITORY FLEET_FLUX_GITHUB KUBECONFIG
 
   stub kind '
 case "$1 $2" in
@@ -38,10 +38,19 @@ case "$*" in
   *) exit 0 ;;
 esac'
   stub docker '
-case "$1" in
-  port) echo "0.0.0.0:55000" ;;
-  run) touch "$STATE/git-server" ;;
-  ps) case "$*" in *fleet-git*) [ -f "$STATE/git-server" ] && echo abc123 ;; esac; exit 0 ;;
+for a; do last="$a"; done
+case "$1 $2" in
+  "image inspect") grep -qx "$last" "$STATE/images" 2> /dev/null ;;
+  build*) echo "$4" >> "$STATE/images" ;;
+  port*) echo "0.0.0.0:55000" ;;
+  run*) echo "$last" > "$STATE/git-server" ;;
+  rm*) rm -f "$STATE/git-server" ;;
+  ps*)
+    case "$*" in
+      *fleet-git*--format*) cat "$STATE/git-server" 2> /dev/null ;;
+      *fleet-git*) [ -f "$STATE/git-server" ] && echo abc123 ;;
+    esac
+    exit 0 ;;
 esac'
   stub git ''
 }
@@ -56,6 +65,14 @@ mgmt() { # script [args...]
   local script="$1"
   shift
   PATH="$STUBS:/usr/bin:/bin" run --separate-stderr bash "$ROOT/scripts/$script" "$@"
+}
+
+# copy_repo: point ROOT at a scratch copy of the files the scripts read, so a test may edit them.
+copy_repo() {
+  local copy="$BATS_TEST_TMPDIR/repo"
+  mkdir -p "$copy"
+  cp -R "$ROOT/scripts" "$ROOT/capi" "$ROOT/kind" "$ROOT/versions.env" "$copy/"
+  ROOT="$copy"
 }
 
 @test "mgmt-up twice calls kind create once" {
@@ -92,9 +109,9 @@ mgmt() { # script [args...]
 @test "mgmt-up with FLEET_PROFILE=lite only references the acme cluster" {
   FLEET_PROFILE=lite mgmt mgmt-up.sh
   [ "$status" -eq 0 ]
-  run grep -c 'capi/customers/acme-dev.yaml' "$CALLS"
+  run grep -c 'customers/acme-dev.yaml' "$CALLS"
   [ "$output" -ge 1 ]
-  run grep -c 'capi/customers/acme-prod.yaml' "$CALLS"
+  run grep -c 'customers/acme-prod.yaml' "$CALLS"
   [ "$output" -ge 1 ]
   run grep -c globex "$CALLS"
   [ "$output" -eq 0 ]
@@ -105,7 +122,7 @@ mgmt() { # script [args...]
 @test "mgmt-up with the full profile references globex too" {
   mgmt mgmt-up.sh
   [ "$status" -eq 0 ]
-  run grep -c 'capi/customers/globex-prod.yaml' "$CALLS"
+  run grep -c 'customers/globex-prod.yaml' "$CALLS"
   [ "$output" -ge 1 ]
 }
 
@@ -121,4 +138,80 @@ mgmt() { # script [args...]
   [ "$status" -eq 0 ]
   run grep -c '^flux bootstrap' "$CALLS"
   [ "$output" -eq 0 ]
+}
+
+@test "mgmt-up applies the kindnet ClusterResourceSet with versions.env substituted" {
+  FLEET_PROFILE=lite mgmt mgmt-up.sh
+  [ "$status" -eq 0 ]
+  run grep -c 'kubectl apply .*rendered/cni/kindnet.yaml' "$CALLS"
+  [ "$output" -eq 1 ]
+  run grep -c 'kind: ClusterResourceSet' "$FLEET_WORK_DIR/rendered/cni/kindnet.yaml"
+  [ "$output" -eq 1 ]
+  # shellcheck source=/dev/null
+  source "$ROOT/versions.env"
+  run grep -c "image: $KINDNETD_IMAGE\$" "$FLEET_WORK_DIR/rendered/cni/kindnet.yaml"
+  [ "$output" -eq 1 ]
+  run grep -c "version: $WORKLOAD_K8S_VERSION\$" "$FLEET_WORK_DIR/rendered/customers/acme-dev.yaml"
+  [ "$output" -eq 1 ]
+  run grep -rc '\${' "$FLEET_WORK_DIR/rendered"
+  [ "$(printf '%s\n' "$output" | grep -vc ':0$')" -eq 0 ]
+}
+
+@test "every customer Cluster carries the fleet/cni: kindnet label" {
+  n=0
+  for f in "$ROOT"/capi/customers/*.yaml; do
+    run grep -c '^    fleet/cni: kindnet$' "$f"
+    [ "$output" -eq 1 ]
+    n=$((n + 1))
+  done
+  [ "$n" -eq 4 ]
+}
+
+@test "no kindest image, digest or Kubernetes version is hard-coded outside versions.env" {
+  run grep -rEn 'kindest/(node|kindnetd):v[0-9]|sha256:7416a61b|v1\.[0-9]+\.[0-9]+' \
+    "$ROOT/capi" "$ROOT/kind" "$ROOT/scripts"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
+@test "mgmt-up passes versions.env values to kind and flux install" {
+  # shellcheck source=/dev/null
+  source "$ROOT/versions.env"
+  mgmt mgmt-up.sh
+  [ "$status" -eq 0 ]
+  run grep -c "^kind create cluster .*--image $KIND_NODE_IMAGE" "$CALLS"
+  [ "$output" -eq 1 ]
+  run grep -c "^flux install --version v$FLUX_VERSION\$" "$CALLS"
+  [ "$output" -eq 1 ]
+}
+
+@test "git server image is rebuilt when kind/git-server changes, not otherwise" {
+  copy_repo
+  mgmt mgmt-up.sh
+  [ "$status" -eq 0 ]
+  mgmt mgmt-up.sh
+  [ "$status" -eq 0 ]
+  run grep -c '^docker build' "$CALLS"
+  [ "$output" -eq 1 ]
+  echo "# changed" >> "$ROOT/kind/git-server/Dockerfile"
+  mgmt mgmt-up.sh
+  [ "$status" -eq 0 ]
+  run grep -c '^docker build' "$CALLS"
+  [ "$output" -eq 2 ]
+  run grep -c '^docker run .*--label fleet-in-a-repo=1' "$CALLS"
+  [ "$output" -eq 2 ]
+}
+
+@test "GITHUB_REPOSITORY alone never triggers flux bootstrap" {
+  GITHUB_REPOSITORY=owner/repo mgmt mgmt-up.sh
+  [ "$status" -eq 0 ]
+  run grep -c '^flux bootstrap' "$CALLS"
+  [ "$output" -eq 0 ]
+}
+
+@test "FLEET_FLUX_GITHUB opts in to flux bootstrap github with token auth" {
+  FLEET_FLUX_GITHUB=owner/repo mgmt mgmt-up.sh
+  [ "$status" -eq 0 ]
+  run grep -c '^flux bootstrap github .*--owner owner --repository repo .*--token-auth' "$CALLS"
+  [ "$output" -eq 1 ]
 }

@@ -1,0 +1,134 @@
+# kindnet CNI for workload clusters. CAPD does not install a CNI (kind's own tooling does
+# that for kind clusters), so this ClusterResourceSet applies the kindnet manifest shipped in
+# kindest/node (/kind/manifests/default-cni.yaml) once to every Cluster labeled
+# fleet/cni=kindnet. POD_SUBNET matches the Clusters' pod CIDR; ${KINDNETD_IMAGE} is
+# substituted from versions.env by mgmt-up.sh.
+apiVersion: addons.cluster.x-k8s.io/v1beta2
+kind: ClusterResourceSet
+metadata:
+  name: kindnet
+  namespace: fleet
+spec:
+  strategy: ApplyOnce
+  clusterSelector:
+    matchLabels:
+      fleet/cni: kindnet
+  resources:
+    - kind: ConfigMap
+      name: kindnet
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kindnet
+  namespace: fleet
+data:
+  kindnet.yaml: |
+    kind: ClusterRole
+    apiVersion: rbac.authorization.k8s.io/v1
+    metadata:
+      name: kindnet
+    rules:
+      - apiGroups: [""]
+        resources: [nodes, pods, namespaces]
+        verbs: [list, watch]
+      - apiGroups: [networking.k8s.io]
+        resources: [networkpolicies]
+        verbs: [list, watch]
+    ---
+    kind: ClusterRoleBinding
+    apiVersion: rbac.authorization.k8s.io/v1
+    metadata:
+      name: kindnet
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: kindnet
+    subjects:
+      - kind: ServiceAccount
+        name: kindnet
+        namespace: kube-system
+    ---
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: kindnet
+      namespace: kube-system
+    ---
+    apiVersion: apps/v1
+    kind: DaemonSet
+    metadata:
+      name: kindnet
+      namespace: kube-system
+      labels:
+        tier: node
+        app: kindnet
+        k8s-app: kindnet
+    spec:
+      selector:
+        matchLabels:
+          app: kindnet
+      template:
+        metadata:
+          labels:
+            tier: node
+            app: kindnet
+            k8s-app: kindnet
+        spec:
+          hostNetwork: true
+          nodeSelector:
+            kubernetes.io/os: linux
+          tolerations:
+            - operator: Exists
+          priorityClassName: system-node-critical
+          serviceAccountName: kindnet
+          containers:
+            - name: kindnet-cni
+              image: ${KINDNETD_IMAGE}
+              env:
+                - name: HOST_IP
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.hostIP
+                - name: POD_IP
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: status.podIP
+                - name: POD_SUBNET
+                  value: 192.168.0.0/16
+              volumeMounts:
+                - name: cni-cfg
+                  mountPath: /etc/cni/net.d
+                - name: xtables-lock
+                  mountPath: /run/xtables.lock
+                  readOnly: false
+                - name: lib-modules
+                  mountPath: /lib/modules
+                  readOnly: true
+                - name: nri-plugin
+                  mountPath: /var/run/nri
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 50Mi
+                limits:
+                  cpu: 100m
+                  memory: 50Mi
+              securityContext:
+                privileged: false
+                capabilities:
+                  add: ["NET_RAW", "NET_ADMIN"]
+          volumes:
+            - name: cni-cfg
+              hostPath:
+                path: /etc/cni/net.d
+            - name: xtables-lock
+              hostPath:
+                path: /run/xtables.lock
+                type: FileOrCreate
+            - name: lib-modules
+              hostPath:
+                path: /lib/modules
+            - name: nri-plugin
+              hostPath:
+                path: /var/run/nri

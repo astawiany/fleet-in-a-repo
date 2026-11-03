@@ -1,5 +1,5 @@
 # CAPD ClusterClass, trimmed from the upstream Cluster API quick-start
-# (clusterclass-quick-start.yaml, release v1.11.3): one control-plane class and one
+# (clusterclass-quick-start.yaml of the release at CLUSTERCTL_VERSION): one control-plane class and one
 # MachineDeployment worker class. Node images are kindest/node:<topology version>.
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: ClusterClass
