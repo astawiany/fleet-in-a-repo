@@ -392,3 +392,81 @@ STUB
   grep -q 'gh pr comment' "$f"
   grep -q 'promotion-note-marker' "$f"
 }
+
+# --- protect-branch.sh read-back verification -----------------------------------------------
+
+# A stateful gh stub. POSTs to the release tag-policy endpoint take effect from the
+# $POLICY_TAKES_EFFECT_ON-th POST on (0 = never); POSTs to /rulesets take effect unless
+# $RULESET_IGNORED is set. Every call is recorded in $WORK/gh.calls.
+stub_gh_stateful() {
+  mkdir -p "$WORK/bin" "$WORK/state"
+  cat > "$WORK/bin/gh" <<STUB
+#!/usr/bin/env bash
+S="$WORK/state"
+echo "gh \$*" >> "$WORK/gh.calls"
+args="\$*"
+[ "\$1" = "api" ] || exit 99
+case "\$args" in
+  *"--method POST"*deployment-branch-policies*)
+    cat > /dev/null
+    n=\$(( \$(cat "\$S/posts" 2> /dev/null || echo 0) + 1 )); echo "\$n" > "\$S/posts"
+    if [ "\${POLICY_TAKES_EFFECT_ON:-1}" -ne 0 ] && [ "\$n" -ge "\${POLICY_TAKES_EFFECT_ON:-1}" ]; then touch "\$S/policy"; fi
+    echo '{}'; exit 0 ;;
+  *"--method POST"*rulesets*)
+    cat > /dev/null
+    [ -n "\${RULESET_IGNORED:-}" ] || touch "\$S/ruleset"
+    echo '{}'; exit 0 ;;
+  *"--method "*) cat > /dev/null; echo '{}'; exit 0 ;;
+  *users/*) echo 4242; exit 0 ;;
+  *deployment-branch-policies*"length"*) [ -f "\$S/policy" ] && echo 1 || echo 0; exit 0 ;;
+  *deployment-branch-policies*) [ -f "\$S/policy" ] && echo 7 || true; exit 0 ;;
+  *rulesets*"length"*) [ -f "\$S/ruleset" ] && echo 1 || echo 0; exit 0 ;;
+  *rulesets*) [ -f "\$S/ruleset" ] && echo 9 || true; exit 0 ;;
+  *branches/*protection*) echo 4; exit 0 ;;
+esac
+exit 99
+STUB
+  chmod +x "$WORK/bin/gh"
+}
+
+run_protect() {
+  PATH="$WORK/bin:$PATH" PROTECT_VERIFY_SLEEP=0 run "$ROOT/scripts/protect-branch.sh" --repo acme/fleet --reviewers alice --approvals 0
+}
+
+@test "protect-branch verifies the release tag policy, the tag ruleset and the branch protection after applying" {
+  stub_gh_stateful
+  POLICY_TAKES_EFFECT_ON=1 run_protect
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"verified: branch protection, release tag policy, tag ruleset"* ]] || { echo "$output"; false; }
+}
+
+@test "protect-branch fails loudly when the release tag policy never takes effect" {
+  stub_gh_stateful
+  POLICY_TAKES_EFFECT_ON=0 run_protect
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"environment 'release' has no chart-v* tag policy"* ]] || { echo "$output"; false; }
+  [[ "$output" != *"verified:"* ]] || false
+}
+
+@test "protect-branch re-posts a tag policy that did not take effect the first time" {
+  stub_gh_stateful
+  POLICY_TAKES_EFFECT_ON=2 run_protect
+  [ "$status" -eq 0 ]
+  [ "$(cat "$WORK/state/posts")" = "2" ]
+  [[ "$output" == *"verified:"* ]] || false
+}
+
+@test "protect-branch fails loudly when the tag ruleset is missing after the apply" {
+  stub_gh_stateful
+  POLICY_TAKES_EFFECT_ON=1 RULESET_IGNORED=1 run_protect
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no active tag ruleset 'release-tags'"* ]] || { echo "$output"; false; }
+}
+
+@test "protect-branch does not read anything back in --dry-run" {
+  stub_gh
+  PATH="$WORK/bin:$PATH" run "$ROOT/scripts/protect-branch.sh" --dry-run --repo acme/fleet --reviewers alice
+  [ "$status" -eq 0 ]
+  [ ! -e "$WORK/gh.calls" ] || { cat "$WORK/gh.calls"; false; }
+  [[ "$output" != *"verified:"* ]] || false
+}

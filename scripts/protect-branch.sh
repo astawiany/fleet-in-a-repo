@@ -151,3 +151,44 @@ if [ "$protect_tags" -eq 1 ]; then
     call "$ruleset" --method POST "repos/$repo/rulesets"
   fi
 fi
+
+# Read back what was applied and fail loudly when something is missing. A first run once left the
+# release Environment with "selected tags" turned on but no tag policy, which blocks every release
+# without any error. GitHub may need a moment after creating the Environment, so retry the policy
+# (re-posting it once) before failing.
+if [ "$dry" -eq 0 ]; then
+  verify_failed=0
+  policy_ok() {
+    gh api "repos/$repo/environments/release/deployment-branch-policies" \
+      --jq '[.branch_policies[] | select(.type == "tag" and .name == "chart-v*")] | length' 2> /dev/null
+  }
+  n=0
+  attempt=0
+  while [ "$attempt" -lt 4 ]; do
+    n="$(policy_ok || echo 0)"
+    [ "$n" = "1" ] && break
+    attempt=$((attempt + 1))
+    sleep "${PROTECT_VERIFY_SLEEP:-3}"
+    if [ "$attempt" -eq 2 ]; then
+      echo '{ "name": "chart-v*", "type": "tag" }' |
+        gh api --method POST "repos/$repo/environments/release/deployment-branch-policies" --input - > /dev/null 2>&1 || true
+    fi
+  done
+  if [ "$n" != "1" ]; then
+    echo "protect-branch: FAILED to verify: environment 'release' has no chart-v* tag policy; releases would be rejected" >&2
+    verify_failed=1
+  fi
+  if [ "$protect_tags" -eq 1 ]; then
+    state="$(gh api "repos/$repo/rulesets" --jq '[.[] | select(.name == "release-tags" and .enforcement == "active" and .target == "tag")] | length' 2> /dev/null || echo 0)"
+    if [ "$state" != "1" ]; then
+      echo "protect-branch: FAILED to verify: no active tag ruleset 'release-tags'; release signatures would not be trustworthy" >&2
+      verify_failed=1
+    fi
+  fi
+  if ! gh api "repos/$repo/branches/$branch/protection" --jq '.required_status_checks.contexts | length' > /dev/null 2>&1; then
+    echo "protect-branch: FAILED to verify: no branch protection on $branch" >&2
+    verify_failed=1
+  fi
+  [ "$verify_failed" -eq 0 ] || exit 1
+  echo "protect-branch: verified: branch protection, release tag policy$([ "$protect_tags" -eq 1 ] && echo ", tag ruleset")" >&2
+fi
