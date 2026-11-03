@@ -109,3 +109,14 @@ run_preflight() {
   [[ "$output" == *"WARNING"*"flux"*"2.9.0"*"$FLUX_VERSION"* ]] || false
   [[ "$output" != *"WARNING"*"kind"* ]] || false
 }
+
+@test "preflight warns, but passes, when fs.inotify.max_user_instances is below 512" {
+  echo 128 > "$BATS_TEST_TMPDIR/inotify"
+  FLEET_INOTIFY_FILE="$BATS_TEST_TMPDIR/inotify" run_preflight --profile lite
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"max_user_instances is 128"* ]] || false
+  echo 1024 > "$BATS_TEST_TMPDIR/inotify"
+  FLEET_INOTIFY_FILE="$BATS_TEST_TMPDIR/inotify" run_preflight --profile lite
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"inotify"* ]] || false
+}

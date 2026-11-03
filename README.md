@@ -146,6 +146,9 @@ Flux commit-status notifications are provided as opt-in manifests in
 - Flux is pinned to 2.2.3, which serves the older `v2beta2` (HelmRelease) and `v1beta2`
   (HelmRepository/OCIRepository) APIs. Bumping it means moving those manifests to the current APIs
   and needs a real `make up`/`make smoke` run.
+- On Linux, kind nodes need `fs.inotify.max_user_instances` of at least 512 (many distros default to
+  128, and nodes then fail with "Too many open files"): `sudo sysctl fs.inotify.max_user_instances=512
+  fs.inotify.max_user_watches=524288`. `preflight.sh` warns when it is lower.
 - Only the CLI versions pinned in `versions.env` are tested; `preflight.sh` warns about others but
   does not stop.
 

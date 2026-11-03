@@ -58,6 +58,17 @@ version_warn flux "$FLUX_VERSION" flux version --client
 version_warn kind "$KIND_VERSION" kind version
 version_warn clusterctl "$CLUSTERCTL_VERSION" env CLUSTERCTL_DISABLE_VERSIONCHECK=true clusterctl version -o short
 
+# Linux hosts: kind/CAPD nodes run systemd, which needs inotify instances; the common default (128)
+# is too low for a management cluster plus workload nodes ("Too many open files" in node logs).
+inotify_file="${FLEET_INOTIFY_FILE:-/proc/sys/fs/inotify/max_user_instances}"
+if [ -r "$inotify_file" ]; then
+  inotify_have="$(cat "$inotify_file" 2> /dev/null || true)"
+  if [[ "$inotify_have" =~ ^[0-9]+$ ]] && [ "$inotify_have" -lt 512 ]; then
+    echo "preflight: WARNING: fs.inotify.max_user_instances is $inotify_have; kind nodes may fail to start" >&2
+    echo "preflight:   fix: sudo sysctl fs.inotify.max_user_instances=512 fs.inotify.max_user_watches=524288" >&2
+  fi
+fi
+
 mem_bytes="$(docker info --format '{{.MemTotal}}' 2>/dev/null || true)"
 if ! [[ "$mem_bytes" =~ ^[0-9]+$ ]]; then
   echo "preflight: cannot read Docker memory; is the Docker daemon running?" >&2

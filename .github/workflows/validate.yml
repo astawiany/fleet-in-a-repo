@@ -74,6 +74,8 @@ jobs:
         run: |
           scripts/ci-install-tools.sh kind clusterctl flux helm kubectl kubeconform kustomize yq
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Raise inotify limits (kind nodes run systemd; the runner default of 128 is too low)
+        run: sudo sysctl -w fs.inotify.max_user_instances=512 fs.inotify.max_user_watches=524288
       - run: make up
       - run: make smoke
       - name: Diagnostics on failure
