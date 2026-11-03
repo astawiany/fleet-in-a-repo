@@ -52,7 +52,11 @@ esac'
   stub curl '
 case "$*" in
   *"/api/dashboards/uid/"*) printf 200 ;;
-  *"/feature"*) if [ -f "$STATE/slow" ]; then echo "200 0.350"; else echo "200 0.012"; fi ;;
+  *"/feature"*)
+    # curl-fail: connection refused; curl still writes its -w line, then exits 7
+    if [ -f "$STATE/curl-fail" ]; then echo "000 0.001"; exit 7; fi
+    if [ -f "$STATE/curl-silent-fail" ]; then exit 7; fi
+    if [ -f "$STATE/slow" ]; then echo "200 0.350"; else echo "200 0.012"; fi ;;
   *) exit 7 ;;
 esac'
 }
@@ -115,8 +119,21 @@ script() { # script [args...]
   script smoke.sh
   [ "$status" -ne 0 ]
   [[ "$output" == *"FAIL performance acme-dev"*"p95=350"* ]] || false
-  # 200 requests per cluster (the stub's sh echo splits each logged call at the -w newline)
+  # 200 requests per cluster
   [ "$(grep -c '127.0.0.1:43210/feature' "$CALLS")" -eq 400 ]
+}
+
+@test "smoke performance counts each failed request once" {
+  kubeconfigs
+  for mode in curl-fail curl-silent-fail; do
+    rm -f "$STATE/curl-fail" "$STATE/curl-silent-fail"
+    touch "$STATE/$mode"
+    script smoke.sh
+    [ "$status" -ne 0 ]
+    line="$(grep '^FAIL performance acme-dev' <<< "$output")"
+    echo "$mode: $line"
+    [[ "$line" == *"(200 of 200 requests to /feature did not return 200;"* ]] || false
+  done
 }
 
 @test "smoke resilience fails when the api Deployment does not recover in time" {
@@ -164,8 +181,10 @@ esac'
   script up.sh
   [ "$status" -ne 0 ]
   [[ "$stderr" == *preflight* ]] || false
-  run grep -E '^(kind create|kind load|clusterctl|flux|docker (build|run)|kubectl|git)' "$CALLS"
-  [ "$status" -eq 1 ]
+  # preflight's read-only client version queries are the only calls allowed
+  run bash -c 'grep -E "^(kind|clusterctl|flux|docker (build|run)|kubectl|git)" "$1" \
+    | grep -vxE "kind version|clusterctl version -o short|flux version --client"' _ "$CALLS"
+  [ "$status" -eq 1 ] || { echo "$output"; false; }
   [ ! -e "$FLEET_WORK_DIR" ]
 }
 

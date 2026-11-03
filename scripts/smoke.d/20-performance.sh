@@ -38,9 +38,11 @@ if [ -z "$port" ]; then
   exit 0
 fi
 
+# Exactly one line per request: a failed curl still writes its -w line ("000 <time>"); only when it
+# wrote nothing does the request count as "000 5" (the --max-time).
 for _ in $(seq 1 "$REQUESTS"); do
-  curl -s -o /dev/null --max-time 5 -w '%{http_code} %{time_total}\n' "http://127.0.0.1:$port/feature" \
-    || echo "000 5"
+  r="$(curl -s -o /dev/null --max-time 5 -w '%{http_code} %{time_total}' "http://127.0.0.1:$port/feature")"
+  echo "${r:-000 5}"
 done > "$tmp/results"
 
 errors="$(awk '$1 != 200' "$tmp/results" | wc -l | tr -d ' ')"
