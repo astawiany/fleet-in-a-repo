@@ -16,7 +16,7 @@ ROOT="$(cd "$here/.." && pwd)"
 source "$here/lib.sh"
 
 ENVS="dev prod"
-WORK="${FLEET_WORK_DIR:-$ROOT/.work}"
+WORK="$(fleet_work_dir "$ROOT")" || exit 1
 
 cust="$(customers)" || exit 1
 checks=("$here"/smoke.d/*.sh)

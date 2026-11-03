@@ -182,6 +182,7 @@ esac'
 
 @test "down removes the work dir and only the fleet kubeconfig contexts" {
   mkdir -p "$FLEET_WORK_DIR/kubeconfigs"
+  touch "$FLEET_WORK_DIR/.fleet-work"
   stub kind 'echo "No kind clusters found." >&2'
   stub docker 'exit 0'
   stub kubectl '

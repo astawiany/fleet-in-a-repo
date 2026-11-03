@@ -3,13 +3,18 @@
 # cluster containers (any capi/customers/*.yaml name, whatever the profile), the fleet-git
 # server container (only when labeled fleet-in-a-repo=1) and the work dir.
 # Silent and exit 0 when nothing exists.
-# Env: FLEET_WORK_DIR (default <repo>/.work).
+# Env: FLEET_WORK_DIR (default <repo>/.work; validated and marker-checked as in down.sh).
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$here/.." && pwd)"
+# shellcheck source=scripts/lib.sh
+source "$here/lib.sh"
 MGMT=fleet-mgmt
 GIT_CONTAINER=fleet-git
-WORK="${FLEET_WORK_DIR:-$ROOT/.work}"
+# Refuse an unsafe or foreign work dir before anything is deleted.
+WORK="$(fleet_work_dir "$ROOT")"
+fleet_work_require_owned "$WORK" "$ROOT"
 
 if kind get clusters 2> /dev/null | grep -qx "$MGMT"; then
   kind delete cluster --name "$MGMT"

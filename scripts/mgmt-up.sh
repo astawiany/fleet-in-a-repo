@@ -20,7 +20,9 @@
 # Workload clusters get their own Flux afterwards: scripts/sync-workloads.sh.
 # Versions: versions.env (KIND_NODE_IMAGE, CLUSTERCTL_VERSION, FLUX_VERSION,
 #   WORKLOAD_K8S_VERSION, KINDNETD_IMAGE).
-# Env: FLEET_FLUX_GITHUB (see 4), FLEET_PROFILE (full|lite), FLEET_WORK_DIR (default <repo>/.work),
+# Env: FLEET_FLUX_GITHUB (see 4b), FLEET_PROFILE (full|lite),
+#      FLEET_WORK_DIR (default <repo>/.work; absolute and validated by lib.sh fleet_work_dir;
+#        created with a .fleet-work marker; a non-empty unmarked dir is refused),
 #      FLEET_WAIT_TIMEOUT seconds to wait for each workload kubeconfig (default 600).
 # All kubectl/clusterctl/flux calls use the dedicated kubeconfig $WORK/mgmt.kubeconfig.
 set -euo pipefail
@@ -38,7 +40,7 @@ ENVS="dev prod"
 BRANCH=main
 GIT_CONTAINER=fleet-git
 GIT_SERVER_DIR="$ROOT/kind/git-server"
-WORK="${FLEET_WORK_DIR:-$ROOT/.work}"
+WORK="$(fleet_work_dir "$ROOT")"
 TIMEOUT="${FLEET_WAIT_TIMEOUT:-600}"
 export KUBECONFIG="$WORK/mgmt.kubeconfig"
 
@@ -74,7 +76,14 @@ for c in $cust; do
   done
 done
 
+# The work dir is ours: create it with the marker down.sh requires before it removes it; never
+# adopt a non-empty directory that lacks the marker.
+if [ -d "$WORK" ] && ! fleet_work_owned "$WORK" "$ROOT" && [ -n "$(ls -A "$WORK")" ]; then
+  echo "mgmt-up: FLEET_WORK_DIR=$WORK exists, is not empty and has no $FLEET_WORK_MARKER marker; choose a new or empty directory" >&2
+  exit 1
+fi
 mkdir -p "$WORK/kubeconfigs"
+touch "$WORK/$FLEET_WORK_MARKER"
 
 # 1. kind management cluster
 if kind get clusters 2> /dev/null | grep -qx "$MGMT"; then

@@ -88,6 +88,8 @@ copy_repo() {
   [ "$output" -eq 1 ]
   run grep -c '^flux install' "$CALLS"
   [ "$output" -eq 1 ]
+  # the work dir it created carries the marker down.sh / mgmt-down.sh require
+  [ -f "$FLEET_WORK_DIR/.fleet-work" ]
 }
 
 @test "mgmt-down with no cluster exits 0 and prints nothing to stderr" {
@@ -101,6 +103,7 @@ copy_repo() {
 @test "mgmt-down deletes an existing fleet-mgmt cluster and removes the work dir" {
   touch "$STATE/kind"
   mkdir -p "$FLEET_WORK_DIR/kubeconfigs"
+  touch "$FLEET_WORK_DIR/.fleet-work"
   mgmt mgmt-down.sh
   [ "$status" -eq 0 ]
   run grep -c '^kind delete cluster --name fleet-mgmt' "$CALLS"

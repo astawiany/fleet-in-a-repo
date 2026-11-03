@@ -21,7 +21,7 @@ source "$here/lib.sh"
 
 ENVS="dev prod"
 NS=fleet
-WORK="${FLEET_WORK_DIR:-$ROOT/.work}"
+WORK="$(fleet_work_dir "$ROOT")"
 TIMEOUT="${FLEET_UP_TIMEOUT:-1500}"
 MGMT_KC="$WORK/mgmt.kubeconfig"
 t0=$SECONDS

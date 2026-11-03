@@ -27,7 +27,7 @@ source "$ROOT/versions.env"
 
 ENVS="dev prod"
 GIT_CONTAINER=fleet-git
-WORK="${FLEET_WORK_DIR:-$ROOT/.work}"
+WORK="$(fleet_work_dir "$ROOT")"
 TIMEOUT="${FLEET_WAIT_TIMEOUT:-600}"
 
 log() { echo "sync-workloads: $*"; }

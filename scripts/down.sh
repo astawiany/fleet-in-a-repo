@@ -6,12 +6,18 @@
 #   3. delete stale contexts (and their cluster and user entries) from the user's kubeconfig
 #      ($KUBECONFIG or ~/.kube/config): kind-fleet-mgmt and <cluster>-admin@<cluster> for every
 #      capi/customers/*.yaml name, whatever the profile. Other contexts are left alone.
-# Env: FLEET_WORK_DIR (default <repo>/.work).
+# Env: FLEET_WORK_DIR (default <repo>/.work): absolute, not /, $HOME, the repo or an ancestor
+#   (scripts/lib.sh fleet_work_dir); removed only when it carries the .fleet-work marker that
+#   mgmt-up.sh writes (or is the default). Otherwise down.sh stops before deleting anything.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$here/.." && pwd)"
-WORK="${FLEET_WORK_DIR:-$ROOT/.work}"
+# shellcheck source=scripts/lib.sh
+source "$here/lib.sh"
+# Refuse an unsafe or foreign work dir before anything is deleted.
+WORK="$(fleet_work_dir "$ROOT")"
+fleet_work_require_owned "$WORK" "$ROOT"
 
 "$here/mgmt-down.sh"
 rm -rf "$WORK"
