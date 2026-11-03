@@ -23,7 +23,8 @@ A single repository with a directory per concern:
   The chart sits in the same Git repo, so Flux ignores `chart.spec.version` (the chart is taken from
   the Git revision); the effective, observable effect of a pin is the image tag. Image tag and
   chart version therefore move in lockstep, and the image built for a version must exist before
-  its pin is promoted.
+  its pin is promoted. The image tag is all a pin controls: changes to the chart's templates or
+  default values reach every environment from Git HEAD at once, without a promotion.
 - **The `test` pin is a staging gate.** There are no `*-test` clusters in 1a, so no cluster reads
   `promotion/versions/test.yaml`. It still exists so the flow is dev -> test -> prod: promoting to
   `test` needs a PR plus review in the `test` GitHub Environment, and `prod` is only promoted after
