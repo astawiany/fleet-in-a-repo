@@ -6,6 +6,6 @@ metadata:
   namespace: flux-system
 spec:
   type: github
-  address: https://github.com/OWNER/REPO  # set to this repository's URL
+  address: https://github.com/astawiany/fleet-in-a-repo  # this repository; change it if you fork
   secretRef:
     name: github-status-token  # Secret with key "token"; see README.md

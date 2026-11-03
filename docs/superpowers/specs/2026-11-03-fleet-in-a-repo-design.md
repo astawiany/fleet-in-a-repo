@@ -15,7 +15,7 @@ Constraints:
 - `make smoke` passes: all clusters `Ready`, all Flux `Kustomization`/`HelmRelease` objects reconciled, demo app responds in every cluster.
 - `make down` removes everything.
 - Promotion dev → test → prod works end to end through PRs, with automated PR creation.
-- README contains an architecture diagram, the ADR index and a short recorded demo.
+- README contains an architecture diagram and the ADR index.
 
 ## 3. Architecture
 - **Management cluster:** kind cluster running Cluster API (CAPD provider) and Flux. Bootstraps everything from this repo.

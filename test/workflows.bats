@@ -183,17 +183,16 @@ workflows() { ls "$WF"/*.yml; }
   grep -q 'digest' "$f"
 }
 
-@test "CODEOWNERS covers platform paths and app paths, and documents its placeholder owner" {
+@test "CODEOWNERS covers platform paths and app paths, and is owned by @astawiany" {
   f="$ROOT/.github/CODEOWNERS"
   for p in infrastructure clusters capi kind scripts .github promotion; do
     grep -Eq "^/$p/ +@" "$f" || { echo "no rule for /$p/"; false; }
   done
   grep -Eq '^/apps/ +@' "$f"
-  grep -Eq '^\* +@OWNER' "$f"
-  grep -q '@OWNER' "$f"
-  grep -qi 'replace' "$f"
-  # the placeholder is the only owner token used
-  ! grep -v '^#' "$f" | grep -Eo '@[A-Za-z0-9_/-]+' | grep -vx '@OWNER'
+  grep -Eq '^\* +@astawiany$' "$f"
+  # no placeholder left, and @astawiany is the only owner token used
+  ! grep -q '@OWNER' "$f"
+  ! grep -v '^#' "$f" | grep -Eo '@[A-Za-z0-9_/-]+' | grep -vx '@astawiany'
 }
 
 # --- protect-branch.sh --------------------------------------------------------------------

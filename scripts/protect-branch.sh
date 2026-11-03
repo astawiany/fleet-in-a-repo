@@ -2,7 +2,7 @@
 # Apply branch protection on main and the test/prod GitHub Environments with required reviewers.
 # Usage: scripts/protect-branch.sh [--dry-run] --repo owner/name --reviewers login[,login...]
 #          [--branch main] [--approvals N] [--enforce-admins]
-#   --dry-run        print the exact gh api calls and execute nothing (--repo defaults to OWNER/REPO)
+#   --dry-run        print the exact gh api calls and execute nothing (--repo defaults to astawiany/fleet-in-a-repo)
 #   --repo           required for a real run; there is no default and it never runs implicitly
 #   --reviewers      comma-separated GitHub logins for the environments (or env PROTECT_REVIEWERS)
 #   --approvals N    approving PR reviews required on the branch, 0-6 (default 1). With 1 or more,
@@ -34,7 +34,7 @@ done
 
 if [ -z "$repo" ]; then
   if [ "$dry" -eq 1 ]; then
-    repo="OWNER/REPO"
+    repo="astawiany/fleet-in-a-repo"
   else
     echo "protect-branch: --repo owner/name is required (use --dry-run to preview)" >&2
     exit 2

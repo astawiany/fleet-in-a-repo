@@ -51,13 +51,9 @@ setup() {
 
 @test "repo contains no employer names" {
   cd "$ROOT"
-  # The pattern is assembled from pieces so this file does not match itself; docs/superpowers and
-  # .superpowers (spec, plan, reports) legitimately name the employer as a constraint.
+  # The pattern is assembled from pieces so this file does not match itself. Only the git-ignored
+  # .superpowers working notes and .work scratch are skipped; docs/superpowers is scanned too.
   pat="t""-mobile|te""lekom"
-  run grep -rIiE "$pat" . --exclude-dir=.git --exclude-dir=.work --exclude-dir=superpowers --exclude-dir=.superpowers
+  run grep -rIiE "$pat" . --exclude-dir=.git --exclude-dir=.work --exclude-dir=.superpowers
   [[ "$status" -eq 1 ]] || { echo "$output"; false; }
-}
-
-@test "README keeps the recorded-demo placeholder until the link is added" {
-  grep -q "Recorded demo:" "$ROOT/README.md" || { echo "README lacks the 'Recorded demo:' line"; false; }
 }

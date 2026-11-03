@@ -1,8 +1,7 @@
 # GitHub setup
 
-Run `scripts/protect-branch.sh --dry-run --repo owner/name --reviewers login1,login2` to preview the
-branch protection and the `test` / `prod` Environments (drop `--dry-run` to apply). Replace `@OWNER` in
-`CODEOWNERS` first.
+Run `scripts/protect-branch.sh --dry-run --repo astawiany/fleet-in-a-repo --reviewers login1,login2` to preview the
+branch protection and the `test` / `prod` Environments (drop `--dry-run` to apply).
 
 Defaults: one approving code-owner review, `validate.yml` checks required, rules not enforced on
 admins. Options:

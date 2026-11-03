@@ -31,6 +31,13 @@ Details, Flux layering and the promotion diagram: [docs/architecture.md](docs/ar
 
 ## Quickstart
 
+Repository: <https://github.com/astawiany/fleet-in-a-repo>
+
+```bash
+git clone https://github.com/astawiany/fleet-in-a-repo.git
+cd fleet-in-a-repo
+```
+
 Prerequisites: Docker, `kind`, `clusterctl`, `flux`, `helm`, `kubectl`, `kubeconform`, `jq`, `yq`,
 `git` and `curl` (checked by `scripts/preflight.sh`, together with Docker memory; it warns when the
 installed `flux`, `kind` or `clusterctl` differs from its pin), plus `bats` for `make test` (dev-only,
@@ -130,8 +137,8 @@ plus the five below (`scripts/smoke.d/`). With the lite profile that is 2 cluste
 `validate.yml` (lint, validate, test, lite smoke on a throwaway kind cluster), `promote.yml`,
 `release.yml`; branch protection and Environments via `scripts/protect-branch.sh`; CODEOWNERS.
 Setup steps and the `GITHUB_TOKEN` limitation: [.github/README.md](.github/README.md).
-`.github/CODEOWNERS` uses the placeholder `@OWNER`; replace it with real handles before enabling
-code-owner review. Flux commit-status notifications are provided as opt-in manifests in
+`.github/CODEOWNERS` assigns every path to `@astawiany`; add teams or users there as needed.
+Flux commit-status notifications are provided as opt-in manifests in
 `infrastructure/base/flux-notifications/`.
 
 ## Known limitations
@@ -145,10 +152,6 @@ code-owner review. Flux commit-status notifications are provided as opt-in manif
 ## Cost
 
 None locally: everything runs in Docker. There is no cloud account or paid service involved.
-
-## Demo recording
-
-Recorded demo: coming soon (link to be added).
 
 ## Decisions (ADRs)
 

@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Built from scratch, generic and public: no employer (employer) names, hostnames, charts or internal detail anywhere in the repo.
+- Built from scratch, generic and public: no employer names, hostnames, charts or internal detail anywhere in the repo.
 - Default run target is local Docker only (kind + CAPD); no cloud credentials needed. Local default is 2 customers × 2 environments (`acme-dev`, `acme-prod`, `globex-dev`, `globex-prod`); a documented "lite" profile is 1 customer × 2 environments.
 - GitHub Actions is the CI platform; no long-lived PATs (use `GITHUB_TOKEN` or a GitHub App token); cloud auth, if ever added, is OIDC only.
 - Flux only for GitOps; Argo CD appears only in an ADR.
@@ -196,9 +196,9 @@
 - Consumes: all prior decisions (ingress choice NGINX Gateway Fabric, used for 1a only since Istio serves Gateway API in 1c: record this in ADR 5; workload sync mechanism chosen in Task 6).
 - Produces: ADRs with sections Context / Decision / Consequences / Alternatives; ADR 4 contains a GitLab CI → GitHub Actions mapping table (pipelines, runners, environments, protected branches, OIDC).
 
-- [ ] **Step 1: Write failing bats tests:** `five ADR files exist with Decision and Consequences headings`; `README links every ADR`; `README contains the quickstart commands make up, make smoke, make down`; `repo contains no occurrence of employer names` (grep guard).
+- [ ] **Step 1: Write failing bats tests:** `five ADR files exist with Decision and Consequences headings`; `README links every ADR`; `README contains the quickstart commands make up, make smoke, make down`; `repo contains no employer names` (grep guard).
 - [ ] **Step 2: Run** `bats test/docs.bats` — Expected: FAIL.
-- [ ] **Step 3: Write** docs; README includes architecture diagram, profiles (full/lite), cost note (none locally), and a placeholder link for the recorded demo to be added in Task 12.
+- [ ] **Step 3: Write** docs; README includes architecture diagram, profiles (full/lite), cost note (none locally),.
 - [ ] **Step 4: Run** `bats test/docs.bats` — Expected: PASS.
 - [ ] **Step 5: Commit** `docs: ADRs, architecture, README`.
 

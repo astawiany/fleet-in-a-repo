@@ -1,18 +1,17 @@
-# Code owners. @OWNER is a PLACEHOLDER: the repository owner must replace every @OWNER below with
-# a real user or team handle (for example @your-org/platform and @your-org/app-team) before enabling
-# "Require review from Code Owners". Until then GitHub treats these rules as invalid and nobody is
-# notified.
+# Code owners. Every rule names @astawiany, the repository owner. With "Require review from Code
+# Owners" enabled (scripts/protect-branch.sh), a pull request touching a path needs their approval.
+# Add teams or more users per rule as the project grows (the last matching rule wins).
 
 # Default and platform paths (the catch-all covers /Makefile, /versions.env, /test/, /docs/ ...;
 # the last matching rule wins, so /apps/ below overrides it)
-* @OWNER
-/infrastructure/ @OWNER
-/clusters/ @OWNER
-/capi/ @OWNER
-/kind/ @OWNER
-/scripts/ @OWNER
-/.github/ @OWNER
-/promotion/ @OWNER
+* @astawiany
+/infrastructure/ @astawiany
+/clusters/ @astawiany
+/capi/ @astawiany
+/kind/ @astawiany
+/scripts/ @astawiany
+/.github/ @astawiany
+/promotion/ @astawiany
 
 # App paths
-/apps/ @OWNER
+/apps/ @astawiany
