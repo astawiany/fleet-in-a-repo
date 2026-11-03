@@ -35,6 +35,8 @@ esac'
 case "$*" in
   *capd-controller-manager*) [ -f "$STATE/capi" ] ;;
   *source-controller*) [ -f "$STATE/flux" ] ;;
+  # drain piped manifests, or the writer may die of SIGPIPE (pipefail) on a busy machine
+  *"apply -f -"*) cat > /dev/null ;;
   *) exit 0 ;;
 esac'
   stub docker '
