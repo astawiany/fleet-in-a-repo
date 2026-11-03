@@ -1,0 +1,56 @@
+{{- range $component := list "web" "api" "worker" }}
+{{- $ctx := dict "root" $ "component" $component }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}
+  labels:
+    {{- include "demo.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ index $.Values.replicas $component }}
+  selector:
+    matchLabels:
+      {{- include "demo.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "demo.labels" $ctx | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: demo
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          args: ["--mode", {{ $component | quote }}]
+          env:
+            - name: FEATURE_NEW_BANNER
+              value: {{ $.Values.features.newBanner | quote }}
+            - name: PORT
+              value: {{ $.Values.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ $.Values.port }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            {{- toYaml $.Values.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+{{- end }}

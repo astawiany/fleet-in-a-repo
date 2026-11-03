@@ -1,0 +1,7 @@
+hostname: demo.globex-dev.fleet.test
+replicas:
+  web: 1
+  api: 1
+  worker: 1
+features:
+  newBanner: false

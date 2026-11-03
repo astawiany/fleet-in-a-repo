@@ -1,0 +1,86 @@
+# Default deny ingress for every pod of this release.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-default-deny
+  labels:
+    app.kubernetes.io/name: demo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: fleet-demo
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: demo
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress]
+---
+# api accepts traffic from web pods only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-allow-web-to-api
+  labels:
+    app.kubernetes.io/name: demo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: fleet-demo
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "demo.selectorLabels" (dict "root" . "component" "api") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "demo.selectorLabels" (dict "root" . "component" "web") | nindent 14 }}
+      ports:
+        - port: {{ .Values.port }}
+---
+# web accepts traffic from the gateway namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-allow-gateway-to-web
+  labels:
+    app.kubernetes.io/name: demo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: fleet-demo
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "demo.selectorLabels" (dict "root" . "component" "web") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.gateway.namespace }}
+      ports:
+        - port: {{ .Values.port }}
+---
+# Prometheus (monitoring namespace) may scrape every pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-allow-prometheus
+  labels:
+    app.kubernetes.io/name: demo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: fleet-demo
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: demo
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.monitoringNamespace }}
+      ports:
+        - port: {{ .Values.port }}

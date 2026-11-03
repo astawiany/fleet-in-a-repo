@@ -2,6 +2,7 @@ extends: default
 ignore: |
   .superpowers/
   .work/
+  apps/demo/chart/templates/
 rules:
   line-length:
     max: 160

@@ -1,0 +1,32 @@
+{{- range $component := list "web" "api" }}
+{{- $ctx := dict "root" $ "component" $component }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}
+  labels:
+    {{- include "demo.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "demo.selectorLabels" $ctx | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+{{- end }}
+---
+# The worker has no Service, so it is scraped through a PodMonitor.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ .Release.Name }}-worker
+  labels:
+    {{- include "demo.labels" (dict "root" . "component" "worker") | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "demo.selectorLabels" (dict "root" . "component" "worker") | nindent 6 }}
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics

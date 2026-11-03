@@ -1,0 +1,17 @@
+{{- $ctx := dict "root" $ "component" "web" }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "demo.labels" $ctx | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ .Values.gateway.name }}
+      namespace: {{ .Values.gateway.namespace }}
+  hostnames:
+    - {{ .Values.hostname | quote }}
+  rules:
+    - backendRefs:
+        - name: {{ .Release.Name }}-web
+          port: 80
