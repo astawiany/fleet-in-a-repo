@@ -85,3 +85,11 @@ fleet_work_require_owned() {
     "one into the work dirs it creates); remove it yourself if it is really a fleet work dir" >&2
   return 1
 }
+
+# dir_hash DIR: 12-hex hash of the file names and contents below DIR (changes when any file does).
+dir_hash() {
+  (cd "$1" && find . -type f | LC_ALL=C sort | while IFS= read -r f; do
+    echo "$f"
+    cat "$f"
+  done) | shasum -a 256 | cut -c1-12
+}

@@ -59,14 +59,6 @@ retry() {
   done
 }
 
-# Hash of kind/git-server (file names + contents): changing it yields a new image tag.
-dir_hash() {
-  (cd "$1" && find . -type f | LC_ALL=C sort | while IFS= read -r f; do
-    echo "$f"
-    cat "$f"
-  done) | shasum -a 256 | cut -c1-12
-}
-
 cust="$(customers)"
 FLUX_PATH="clusters/management/$FLEET_PROFILE"
 names=""
@@ -121,6 +113,7 @@ fi
 git -C "$ROOT" push -q --force "$bare" "HEAD:refs/heads/$BRANCH"
 git -C "$bare" symbolic-ref HEAD "refs/heads/$BRANCH"
 
+# Tag = lib.sh dir_hash of kind/git-server: changing it yields a new image.
 git_image="fleet-git-server:$(dir_hash "$GIT_SERVER_DIR")"
 docker image inspect "$git_image" > /dev/null 2>&1 \
   || docker build -q -t "$git_image" "$GIT_SERVER_DIR" > /dev/null

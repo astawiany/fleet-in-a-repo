@@ -2,7 +2,11 @@
 # Bring the whole fleet up (idempotent; safe to re-run):
 #   1. preflight.sh: tools and Docker memory for FLEET_PROFILE; on failure nothing is created
 #   2. build the demo image (apps/demo/src) as <chart image.repository>:<pin> for every pin of
-#      promotion/versions/{dev,prod}.yaml; skipped when the image already exists
+#      promotion/versions/{dev,prod}.yaml as committed at git HEAD (what Flux deploys; a
+#      working-tree pin that differs only gets a warning). The image carries the label
+#      fleet.src-hash (lib.sh dir_hash of apps/demo/src) and is rebuilt when that differs.
+#      Running pods pick up a rebuilt image only on a version bump or restart, although
+#      step 5 loads it into the nodes either way.
 #   3. mgmt-up.sh: kind management cluster, Cluster API, Flux, offline git server, kubeconfigs
 #   4. wait until every workload Cluster of the profile is Available (control plane + workers)
 #   5. kind load the demo image into each workload cluster's nodes (no registry offline; the chart
@@ -47,18 +51,37 @@ done
 repo="$(awk '/^image:/ { f = 1; next } f && /^[^ ]/ { f = 0 } f && $1 == "repository:" { print $2; exit }' \
   "$ROOT/apps/demo/chart/values.yaml")"
 [ -n "$repo" ] || die "no image.repository in apps/demo/chart/values.yaml"
+# pin_file ENV: promotion/versions/ENV.yaml as committed at HEAD; the working tree when this is
+# not a git checkout (or has no commit yet).
+pin_file() {
+  local f="promotion/versions/$1.yaml" committed
+  if committed="$(git -C "$ROOT" show "HEAD:$f" 2> /dev/null)"; then
+    if [ -f "$ROOT/$f" ] && [ "$committed" != "$(cat "$ROOT/$f")" ]; then
+      echo "up: warning: $f differs from HEAD; using the committed pin (Flux deploys HEAD)" >&2
+    fi
+    printf '%s\n' "$committed"
+  else
+    cat "$ROOT/$f"
+  fi
+}
 images=""
 for e in $ENVS; do
-  v="$(awk '/^chart:/ { f = 1; next } f && $1 == "version:" { print $2; exit }' "$ROOT/promotion/versions/$e.yaml")"
+  v="$(pin_file "$e" | awk '/^chart:/ { f = 1; next } f && $1 == "version:" { print $2; exit }')"
   [ -n "$v" ] || die "no chart.version in promotion/versions/$e.yaml"
   case " $images " in *" $repo:$v "*) ;; *) images="$images $repo:$v" ;; esac
 done
+src_hash="$(dir_hash "$ROOT/apps/demo/src")"
 for img in $images; do
-  if docker image inspect "$img" > /dev/null 2>&1; then
-    log "image $img exists"
+  have="$(docker image inspect --format '{{ index .Config.Labels "fleet.src-hash" }}' "$img" 2> /dev/null || true)"
+  if [ "$have" = "$src_hash" ]; then
+    log "image $img is up to date (source $src_hash)"
   else
-    log "building $img"
-    docker build -q -t "$img" "$ROOT/apps/demo/src" > /dev/null
+    if [ -n "$have" ]; then
+      log "rebuilding $img: apps/demo/src changed ($have -> $src_hash); running pods keep the old image until a version bump or restart"
+    else
+      log "building $img (source $src_hash)"
+    fi
+    docker build -q --label "fleet.src-hash=$src_hash" -t "$img" "$ROOT/apps/demo/src" > /dev/null
   fi
 done
 
