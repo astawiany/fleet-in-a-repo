@@ -106,24 +106,24 @@ copy_repo() {
   [ ! -e "$FLEET_WORK_DIR" ]
 }
 
-@test "mgmt-up with FLEET_PROFILE=lite only references the acme cluster" {
+@test "mgmt-up with FLEET_PROFILE=lite syncs clusters/management/lite and only acme" {
   FLEET_PROFILE=lite mgmt mgmt-up.sh
   [ "$status" -eq 0 ]
-  run grep -c 'customers/acme-dev.yaml' "$CALLS"
-  [ "$output" -ge 1 ]
-  run grep -c 'customers/acme-prod.yaml' "$CALLS"
-  [ "$output" -ge 1 ]
+  run grep -c '^flux create kustomization flux-system .*--path ./clusters/management/lite ' "$CALLS"
+  [ "$output" -eq 1 ]
   run grep -c globex "$CALLS"
   [ "$output" -eq 0 ]
   [ -f "$FLEET_WORK_DIR/kubeconfigs/acme-dev.yaml" ]
+  [ -f "$FLEET_WORK_DIR/kubeconfigs/acme-prod.yaml" ]
   [ ! -e "$FLEET_WORK_DIR/kubeconfigs/globex-dev.yaml" ]
 }
 
-@test "mgmt-up with the full profile references globex too" {
+@test "mgmt-up with the full profile syncs clusters/management/full and globex too" {
   mgmt mgmt-up.sh
   [ "$status" -eq 0 ]
-  run grep -c 'customers/globex-prod.yaml' "$CALLS"
-  [ "$output" -ge 1 ]
+  run grep -c '^flux create kustomization flux-system .*--path ./clusters/management/full ' "$CALLS"
+  [ "$output" -eq 1 ]
+  [ -f "$FLEET_WORK_DIR/kubeconfigs/globex-prod.yaml" ]
 }
 
 @test "mgmt-up rewrites workload kubeconfig server to the published load balancer port" {
@@ -140,21 +140,37 @@ copy_repo() {
   [ "$output" -eq 0 ]
 }
 
-@test "mgmt-up applies the kindnet ClusterResourceSet with versions.env substituted" {
-  FLEET_PROFILE=lite mgmt mgmt-up.sh
-  [ "$status" -eq 0 ]
-  run grep -c 'kubectl apply .*rendered/cni/kindnet.yaml' "$CALLS"
-  [ "$output" -eq 1 ]
-  run grep -c 'kind: ClusterResourceSet' "$FLEET_WORK_DIR/rendered/cni/kindnet.yaml"
-  [ "$output" -eq 1 ]
+@test "mgmt-up publishes versions.env values in ConfigMap fleet-vars before syncing Flux" {
   # shellcheck source=/dev/null
   source "$ROOT/versions.env"
-  run grep -c "image: $KINDNETD_IMAGE\$" "$FLEET_WORK_DIR/rendered/cni/kindnet.yaml"
-  [ "$output" -eq 1 ]
-  run grep -c "version: $WORKLOAD_K8S_VERSION\$" "$FLEET_WORK_DIR/rendered/customers/acme-dev.yaml"
-  [ "$output" -eq 1 ]
-  run grep -rc '\${' "$FLEET_WORK_DIR/rendered"
-  [ "$(printf '%s\n' "$output" | grep -vc ':0$')" -eq 0 ]
+  FLEET_PROFILE=lite mgmt mgmt-up.sh
+  [ "$status" -eq 0 ]
+  line="$(grep -n 'create configmap fleet-vars' "$CALLS")"
+  [[ "$line" == *"-n flux-system"* ]] || false
+  [[ "$line" == *"--from-literal=WORKLOAD_K8S_VERSION=$WORKLOAD_K8S_VERSION "* ]] || false
+  [[ "$line" == *"--from-literal=KINDNETD_IMAGE=$KINDNETD_IMAGE "* ]] || false
+  sync="$(grep -n '^flux create kustomization flux-system' "$CALLS")"
+  [ "${line%%:*}" -lt "${sync%%:*}" ]
+}
+
+@test "every \${VAR} in capi/ is a fleet-vars key" {
+  FLEET_PROFILE=lite mgmt mgmt-up.sh
+  [ "$status" -eq 0 ]
+  keys="$(grep -m1 'create configmap fleet-vars' "$CALLS" | grep -oE -- '--from-literal=[A-Z_]+' | cut -d= -f2)"
+  vars="$(grep -rhoE '\$\{[A-Z_]+\}' "$ROOT/capi" | tr -d '${}' | sort -u)"
+  [ -n "$vars" ]
+  for v in $vars; do
+    printf '%s\n' "$keys" | grep -qx "$v"
+  done
+}
+
+@test "mgmt-up leaves capi/ to Flux: it kubectl-applies only generated stdin, never files" {
+  mgmt mgmt-up.sh
+  [ "$status" -eq 0 ]
+  run grep -c '^kubectl .*apply' "$CALLS"
+  [ "$output" -ge 1 ]
+  run grep -cE '^kubectl .*apply.* -f [^-]' "$CALLS"
+  [ "$output" -eq 0 ]
 }
 
 @test "every customer Cluster carries the fleet/cni: kindnet label" {
@@ -212,6 +228,6 @@ copy_repo() {
 @test "FLEET_FLUX_GITHUB opts in to flux bootstrap github with token auth" {
   FLEET_FLUX_GITHUB=owner/repo mgmt mgmt-up.sh
   [ "$status" -eq 0 ]
-  run grep -c '^flux bootstrap github .*--owner owner --repository repo .*--token-auth' "$CALLS"
+  run grep -c '^flux bootstrap github .*--owner owner --repository repo .*--path clusters/management/full .*--token-auth' "$CALLS"
   [ "$output" -eq 1 ]
 }

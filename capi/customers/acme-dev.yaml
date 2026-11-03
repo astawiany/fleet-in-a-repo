@@ -18,7 +18,7 @@ spec:
   topology:
     classRef:
       name: fleet-capd
-    # Substituted from versions.env by mgmt-up.sh (Flux postBuild substitution uses the same syntax).
+    # Substituted by Flux from ConfigMap fleet-vars (written by mgmt-up.sh from versions.env).
     version: ${WORKLOAD_K8S_VERSION}
     controlPlane:
       replicas: 1

@@ -1,8 +1,8 @@
 # kindnet CNI for workload clusters. CAPD does not install a CNI (kind's own tooling does
 # that for kind clusters), so this ClusterResourceSet applies the kindnet manifest shipped in
 # kindest/node (/kind/manifests/default-cni.yaml) once to every Cluster labeled
-# fleet/cni=kindnet. POD_SUBNET matches the Clusters' pod CIDR; ${KINDNETD_IMAGE} is
-# substituted from versions.env by mgmt-up.sh.
+# fleet/cni=kindnet. POD_SUBNET matches the Clusters' pod CIDR; the KINDNETD_IMAGE placeholder
+# is substituted by Flux from ConfigMap fleet-vars (mgmt-up.sh, from versions.env).
 apiVersion: addons.cluster.x-k8s.io/v1beta2
 kind: ClusterResourceSet
 metadata:

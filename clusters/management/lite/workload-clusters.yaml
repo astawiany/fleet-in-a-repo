@@ -1,0 +1,23 @@
+# Management cluster, FLEET_PROFILE=lite (mgmt-up.sh syncs clusters/management/$FLEET_PROFILE).
+# Applies capi/: namespace, ClusterClass, kindnet ClusterResourceSet and the workload Clusters.
+# Placeholders come from ConfigMap flux-system/fleet-vars, written by mgmt-up.sh from versions.env.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: workload-clusters
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 30s  # CAPI webhooks may lag behind a fresh provider install
+  path: ./capi
+  # FLEET_PROFILE=lite: drop the Clusters of customers outside the lite profile.
+  components:
+    - profiles/lite
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: fleet-vars

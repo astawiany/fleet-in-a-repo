@@ -1,0 +1,14 @@
+# FLEET_PROFILE=lite (see scripts/lib.sh customers()): keep only the acme Clusters. Used as a
+# Flux Kustomization component by clusters/management/lite/workload-clusters.yaml.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      kind: Cluster
+      labelSelector: fleet/customer notin (acme)
+    patch: |-
+      $patch: delete
+      apiVersion: cluster.x-k8s.io/v1beta2
+      kind: Cluster
+      metadata:
+        name: not-used
