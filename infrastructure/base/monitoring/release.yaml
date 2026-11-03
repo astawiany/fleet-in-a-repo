@@ -70,6 +70,10 @@ spec:
         requests: {cpu: 10m, memory: 32Mi}
         limits: {memory: 128Mi}
     grafana:
+      grafana.ini:
+        plugins:
+          # Grafana 12 downloads a set of app plugins at start; that spike OOM-killed it at 256Mi.
+          preinstall_disabled: true
       sidecar:
         dashboards:
           enabled: true
@@ -77,5 +81,5 @@ spec:
           labelValue: "1"
           searchNamespace: ALL
       resources:
-        requests: {cpu: 10m, memory: 96Mi}
-        limits: {memory: 256Mi}
+        requests: {cpu: 10m, memory: 128Mi}
+        limits: {memory: 384Mi}
