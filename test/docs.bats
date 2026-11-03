@@ -111,3 +111,15 @@ setup() {
   run grep -n -- '--protect-tags' "$g" "$f" "$ROOT/README.md"
   [ "$status" -eq 1 ] || { echo "stale flag: $output"; false; }
 }
+
+@test "security docs: tag only after signing, re-check before each write, half-finished release = bump" {
+  f="$ROOT/docs/security.md"
+  grep -q 'pushed by digest only' "$f"
+  grep -q 'never points to an unsigned' "$f"
+  grep -q 'again right before each tag' "$f"
+  grep -q '^Half-finished release' "$f"
+  grep -q 'Bump the version and release again' "$f"
+  grep -q 'concurrency: release-<ref>' "$f"
+  grep -q 'SBOM_GENERATOR_IMAGE' "$f"
+  grep -q 'Bump the version and tag again' "$ROOT/.github/README.md"
+}

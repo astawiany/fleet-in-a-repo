@@ -297,35 +297,73 @@ STUB
   [ "$(yq '.jobs.verify.steps[0].with."fetch-depth"' "$REL")" = "0" ]
   body="$(yq '.jobs.verify.steps[] | select(.id == "check") | .run' "$REL")"
   [[ "$body" == *'scripts/release.sh check-tag "$TAG"'* ]] || false
-  [[ "$body" == *'scripts/release.sh check-ancestor "refs/tags/$TAG" origin/main'* ]] || false
+  [[ "$body" == *'scripts/release.sh check-ancestor "$GITHUB_SHA" origin/main'* ]] || false
   [[ "$body" == *'check-absent "ghcr.io/${owner}/fleet-demo:${version}"'* ]] || false
   [[ "$body" == *'check-absent "ghcr.io/${owner}/charts/demo:${version}"'* ]] || false
   [ "$(yq '.concurrency."cancel-in-progress"' "$REL")" = "false" ]
+  # per tag, so a third tag cannot replace a second one that is still queued
+  [ "$(yq '.concurrency.group' "$REL")" = 'release-${{ github.ref }}' ]
 }
 
 # line number of the first step in job $1 whose run contains $2
 step_idx() { yq ".jobs.$1.steps | to_entries | map(select(.value.run != null and (.value.run | contains(\"$2\")))) | .[0].key" "$REL"; }
 
-@test "release.yml image job: scan before push, push with attestations, check, then sign and verify by digest" {
+# line number (within the run block of step $2 of job $1) of the first line containing $3
+line_in() { yq ".jobs.$1.steps[$2].run" "$REL" | grep -nF -- "$3" | head -n 1 | cut -d: -f1; }
+
+@test "release.yml image job: scan, push by digest, check, sign and verify, and only then tag the version" {
   scan_build="$(step_idx image 'build --load -t fleet-demo:scan')"
   gate="$(step_idx image 'scripts/security-scan.sh fleet-demo:scan')"
-  push="$(step_idx image 'build --push')"
+  push="$(step_idx image 'push-by-digest=true')"
   same="$(step_idx image 'assert-scanned fleet-demo:scan')"
   sign="$(step_idx image 'cosign sign --yes')"
-  for v in "$scan_build" "$gate" "$push" "$same" "$sign"; do [ "$v" != "null" ] || { echo "missing step"; false; }; done
-  [ "$scan_build" -lt "$gate" ] && [ "$gate" -lt "$push" ] && [ "$push" -lt "$same" ] && [ "$same" -lt "$sign" ] \
-    || { echo "order: $scan_build $gate $push $same $sign"; false; }
+  tag="$(step_idx image 'imagetools create -t')"
+  for v in "$scan_build" "$gate" "$push" "$same" "$sign" "$tag"; do [ "$v" != "null" ] || { echo "missing step"; false; }; done
+  [ "$scan_build" -lt "$gate" ] && [ "$gate" -lt "$push" ] && [ "$push" -lt "$same" ] && [ "$same" -lt "$sign" ] && [ "$sign" -lt "$tag" ] \
+    || { echo "order: $scan_build $gate $push $same $sign $tag"; false; }
   pushrun="$(yq ".jobs.image.steps[$push].run" "$REL")"
-  [[ "$pushrun" == *"--provenance=mode=max --sbom=true"* ]] || false
+  [[ "$pushrun" == *'--provenance=mode=max --sbom="generator=$SBOM_GENERATOR_IMAGE"'* ]] || false
+  [[ "$pushrun" == *'--output "type=image,name=$IMAGE,push-by-digest=true,name-canonical=true,push=true"'* ]] || false
   [[ "$pushrun" == *'--metadata-file "$RUNNER_TEMP/image-metadata.json"'* ]] || false
   [[ "$pushrun" == *'echo "ref=$IMAGE@$digest" >> "$GITHUB_OUTPUT"'* ]] || false
+  # the push writes no tag: the only "-t" of the version is the imagetools create after signing
+  run grep -nF -- '-t "$IMAGE:$VERSION"' "$REL"
+  [ "${#lines[@]}" -eq 1 ] || { echo "$output"; false; }
+  [[ "$pushrun" != *'--push'* ]] || false
+  # the version tag is checked absent right before the push and right before it is written
+  [ "$(line_in image "$push" 'scripts/release.sh check-absent "$IMAGE:$VERSION"')" -lt "$(line_in image "$push" 'scripts/release.sh build')" ] || false
+  [ "$(line_in image "$tag" 'scripts/release.sh check-absent "$IMAGE:$VERSION"')" -lt "$(line_in image "$tag" 'imagetools create')" ] || false
+  [ "$(line_in image "$tag" 'imagetools create -t "$IMAGE:$VERSION" "$REF"')" -lt "$(line_in image "$tag" 'scripts/release.sh assert-tag "$IMAGE:$VERSION" "$DIGEST"')" ] || false
   [ "$(yq '.jobs.image.outputs.digest' "$REL")" = '${{ steps.push.outputs.digest }}' ]
   # the only image builds go through scripts/release.sh build (pinned BuildKit, same args)
   run grep -nE 'docker (image )?build ' "$REL"
   [ "$status" -eq 1 ] || { echo "$output"; false; }
   grep -q 'driver-opt "image=$BUILDKIT_IMAGE"' "$REL"
+  grep -q 'echo "SBOM_GENERATOR_IMAGE=$SBOM_GENERATOR_IMAGE"' "$REL"
+  grep -Eq '^SBOM_GENERATOR_IMAGE=docker/buildkit-syft-scanner:[0-9.]+@sha256:[0-9a-f]{64}$' "$ROOT/versions.env"
   grep -q 'SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD)' "$REL"
   grep -q 'GITHUB_STEP_SUMMARY' "$REL"
+}
+
+@test "release.yml chart job checks the chart version is absent right before helm push" {
+  push="$(step_idx chart 'helm push')"
+  [ "$push" != "null" ]
+  [ "$(line_in chart "$push" 'scripts/release.sh check-absent "ghcr.io/${OWNER}/charts/demo:${VERSION}"')" -lt "$(line_in chart "$push" 'helm push')" ] || false
+}
+
+@test "assert-tag passes only when the tag resolves to the signed digest" {
+  stub_docker
+  raw ghcr.io/o/fleet-demo:1.0.0 "{\"digest\":\"sha256:$D64\"}"
+  rel assert-tag ghcr.io/o/fleet-demo:1.0.0 "sha256:$D64"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  grep -qF "buildx imagetools inspect --format {{json .Manifest}} ghcr.io/o/fleet-demo:1.0.0" "$WORK/docker.calls"
+  rel assert-tag ghcr.io/o/fleet-demo:1.0.0 "sha256:$D64B"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"expected the signed digest"* ]] || false
+  rel assert-tag ghcr.io/o/fleet-demo:2.0.0 "sha256:$D64"
+  [ "$status" -ne 0 ]
+  rel assert-tag "ghcr.io/o/fleet-demo@sha256:$D64" "sha256:$D64"
+  [ "$status" -ne 0 ]
 }
 
 @test "release.yml: every cosign call targets a digest ref and verify pins identity and issuer" {

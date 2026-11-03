@@ -41,6 +41,9 @@ self-review" option is enabled.
 - The `release` Environment gets the same required reviewers as `test` / `prod` and only accepts
   deployments from `chart-v*` tags (a deployment tag policy). The `image` and `chart` jobs both run
   in it, so a release needs two approvals, one per job.
+- A half-finished release (a job failed after pushing) is not re-run: re-runs stop at the
+  "version already exists" check. Bump the version and tag again
+  ([docs/security.md](../docs/security.md#release-procedure)).
 - The tag ruleset is the control that matters. A `chart-v*` tag runs the `release.yml` of the
   tagged commit, so a writer could push a branch with a modified `release.yml` (no `verify`, no
   Environment), tag it, and get a signature that matches the documented identity. The `verify` job

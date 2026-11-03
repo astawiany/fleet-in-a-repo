@@ -1,8 +1,11 @@
 # Release: on a chart-vX.Y.Z tag cut from main, publish the demo app image and Helm chart to ghcr.io.
 #   verify: tag format, tagged commit is on main, version not yet in the registry (never overwrite)
-#   image:  build, scan (trivy, govulncheck) BEFORE pushing, push with SBOM + provenance, check the
-#           pushed image is the scanned one, sign the digest with cosign (keyless), verify
+#   image:  build, scan (trivy, govulncheck) BEFORE pushing, push BY DIGEST ONLY with SBOM + provenance,
+#           check the pushed image is the scanned one, sign the digest with cosign (keyless), verify,
+#           and only then create the version tag pointing to that digest
 #   chart:  package with image.digest pinned to that digest, push, sign the chart digest, verify
+# Right before each write of a version tag the registry is checked again, so a long approval wait or
+# "Re-run failed jobs" never overwrites a published version: a half-finished release needs a new version.
 # image and chart run in the `release` Environment: a reviewer approves each before it starts.
 # Auth is GITHUB_TOKEN only; permissions are granted per job. Consumers: docs/security.md.
 name: release
@@ -13,9 +16,10 @@ on:
 
 permissions: {}
 
-# One release at a time; a second tag waits instead of racing the registry check.
+# Runs for the same tag are serialized and never cancelled. Per tag: with one shared group a third tag
+# would replace a second one that is still waiting (GitHub keeps one pending run per group).
 concurrency:
-  group: release
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -44,7 +48,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           version="$(scripts/release.sh check-tag "$TAG")"
-          scripts/release.sh check-ancestor "refs/tags/$TAG" origin/main
+          # GITHUB_SHA is the commit every later job checks out and builds
+          scripts/release.sh check-ancestor "$GITHUB_SHA" origin/main
           owner="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
           scripts/release.sh check-absent "ghcr.io/${owner}/fleet-demo:${version}"
@@ -86,6 +91,7 @@ jobs:
             # fixed timestamps: the scan build and the push build produce the same image config
             echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD)"
             echo "BUILDER=release"
+            echo "SBOM_GENERATOR_IMAGE=$SBOM_GENERATOR_IMAGE"
           } >> "$GITHUB_ENV"
           # attestations (SBOM, provenance) need the docker-container driver
           docker buildx create --name release --driver docker-container --driver-opt "image=$BUILDKIT_IMAGE"
@@ -94,15 +100,18 @@ jobs:
         run: scripts/release.sh build --load -t fleet-demo:scan
       - name: Security gate (fails before anything is pushed)
         run: scripts/security-scan.sh fleet-demo:scan
-      - name: Push with SBOM and provenance, record digest
+      - name: Push by digest (no tag yet) with SBOM and provenance, record digest
         id: push
         env:
           GH_ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
-          scripts/release.sh build --push --provenance=mode=max --sbom=true \
-            --metadata-file "$RUNNER_TEMP/image-metadata.json" -t "$IMAGE:$VERSION"
+          # again here: approval may have taken hours, or this is a re-run
+          scripts/release.sh check-absent "$IMAGE:$VERSION"
+          scripts/release.sh build --provenance=mode=max --sbom="generator=$SBOM_GENERATOR_IMAGE" \
+            --output "type=image,name=$IMAGE,push-by-digest=true,name-canonical=true,push=true" \
+            --metadata-file "$RUNNER_TEMP/image-metadata.json"
           digest="$(scripts/release.sh image-digest "$RUNNER_TEMP/image-metadata.json")"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
           echo "ref=$IMAGE@$digest" >> "$GITHUB_OUTPUT"
@@ -119,6 +128,14 @@ jobs:
             --certificate-identity-regexp "$(scripts/release.sh identity-regexp "$GITHUB_REPOSITORY")" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
           echo "verified signature of $REF"
+      - name: Tag the signed digest with the version
+        env:
+          REF: ${{ steps.push.outputs.ref }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          scripts/release.sh check-absent "$IMAGE:$VERSION"
+          docker buildx imagetools create -t "$IMAGE:$VERSION" "$REF"
+          scripts/release.sh assert-tag "$IMAGE:$VERSION" "$DIGEST"
       - name: Summary
         env:
           REF: ${{ steps.push.outputs.ref }}
@@ -169,6 +186,8 @@ jobs:
           echo "$GH_TOKEN" | helm registry login ghcr.io --username "$GH_ACTOR" --password-stdin
           # cosign reads the docker credential store
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          # again here: approval may have taken hours, or this is a re-run (helm package output differs per run)
+          scripts/release.sh check-absent "ghcr.io/${OWNER}/charts/demo:${VERSION}"
           helm push "$RUNNER_TEMP/demo-${VERSION}.tgz" "oci://ghcr.io/${OWNER}/charts" 2>&1 | tee "$RUNNER_TEMP/helm-push.txt"
           digest="$(scripts/release.sh helm-digest "$RUNNER_TEMP/helm-push.txt")"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"

@@ -15,6 +15,7 @@
 #   assert-scanned <local image> <ref@digest>
 #                                     fail unless the pushed linux/amd64 image has the same config
 #                                     digest (same layers diff_ids, labels, entrypoint) as the scanned one
+#   assert-tag <repo:tag> <digest>    fail unless <repo:tag> resolves to <digest> in the registry
 #   identity-regexp <owner/repo>      print the Sigstore certificate identity regexp of release.yml
 #   image-digest <metadata.json>      print containerimage.digest from a buildx --metadata-file
 #   helm-digest <file>                print the digest from saved `helm push` output
@@ -138,6 +139,15 @@ assert_scanned() {
   echo "release: pushed image config $pushed equals the scanned image config"
 }
 
+assert_tag() {
+  local ref="${1:-}" want="${2:-}" got
+  [[ "$ref" == *:* && "$ref" != *@* ]] || die "assert-tag needs <repo:tag> (got '$ref')"
+  [[ "$want" =~ $digest_re ]] || die "assert-tag needs a sha256 digest (got '$want')"
+  got="$(docker buildx imagetools inspect --format '{{json .Manifest}}' "$ref" | jq -r '.digest // empty')"
+  [ "$got" = "$want" ] || die "$ref resolves to '$got', expected the signed digest $want"
+  echo "release: $ref resolves to $want"
+}
+
 identity_regexp() {
   local repo="${1:-}"
   [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "identity-regexp needs owner/repo (got '$repo')"
@@ -165,11 +175,12 @@ case "$cmd" in
   check-absent) check_absent "$@" ;;
   build) build "$@" ;;
   assert-scanned) assert_scanned "$@" ;;
+  assert-tag) assert_tag "$@" ;;
   identity-regexp) identity_regexp "$@" ;;
   image-digest) image_digest "$@" ;;
   helm-digest) helm_digest "$@" ;;
   local-config-digest) local_config_digest "$@" ;;
   remote-config-digest) remote_config_digest "$@" ;;
   govulncheck) run_govulncheck "$@" ;;
-  *) echo "usage: $0 check-tag|check-ancestor|check-absent|build|assert-scanned|identity-regexp|image-digest|helm-digest|local-config-digest|remote-config-digest|govulncheck" >&2; exit 2 ;;
+  *) echo "usage: $0 check-tag|check-ancestor|check-absent|build|assert-scanned|assert-tag|identity-regexp|image-digest|helm-digest|local-config-digest|remote-config-digest|govulncheck" >&2; exit 2 ;;
 esac

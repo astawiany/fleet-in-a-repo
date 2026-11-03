@@ -22,8 +22,11 @@ signature also covers the SBOM and provenance.
 
 Before anything is pushed the image job fails on: a fixable HIGH or CRITICAL vulnerability in the
 image, any secret in the image or the repository, a HIGH or CRITICAL misconfiguration in the chart or
-the Dockerfile (Trivy), or a vulnerable Go function the code actually calls (govulncheck). After the
-push it checks that the pushed image has the same config digest as the scanned one.
+the Dockerfile (Trivy), or a vulnerable Go function the code actually calls (govulncheck). The image
+is then pushed by digest only, with no tag. The job checks that the pushed image has the same config
+digest as the scanned one, signs and verifies that digest, and only then creates the version tag and
+checks that it resolves to the signed digest. A version tag therefore never points to an unsigned
+image. The chart is pushed after the image is tagged.
 
 ## Verify before use
 
@@ -100,6 +103,7 @@ the base image digests.
 6. Not blocked: a writer can push a workflow on another branch that uses `GITHUB_TOKEN` with
    `packages: write` and overwrites a tag on GHCR. Such an image has no matching signature.
 7. Tags on GHCR are mutable: always resolve a tag once, verify the digest, and deploy by digest.
+   The workflow re-checks that a version is absent right before it writes each tag.
 8. A compromised base image, Go module or tool upstream is limited by digest and checksum pins and
    by the scans, not excluded.
 9. `GITHUB_TOKEN` is the only credential; there are no long-lived registry or signing keys to leak.
@@ -120,7 +124,16 @@ the base image digests.
 5. Verify both artifacts with the commands above.
 6. First release only: make the packages public (next section).
 
-A version is never overwritten: to fix a release, push a new tag with a higher version.
+A version is never overwritten: the registry is checked in `verify` and again right before each tag
+is written (image tag, chart push). To fix a release, push a new tag with a higher version.
+
+Half-finished release (a job failed after something was pushed, for example signing failed): do
+not re-run it. The image may already exist by digest, or its version tag, or the chart. A re-run
+stops at the absence check. Bump the version and release again. An image pushed by digest but never
+tagged or signed is not a release; delete it from the package page if you like.
+
+Runs for the same tag are serialized (`concurrency: release-<ref>`, never cancelled); different tags
+run independently and are separated by the absence checks.
 
 ## GHCR packages
 
@@ -145,5 +158,7 @@ A version is never overwritten: to fix a release, push a new tag with a higher v
 - The scans are a point-in-time gate on the day of the release. Vulnerabilities published later are
   not reported for released versions; rescan by digest (`trivy image ghcr.io/astawiany/fleet-demo@<digest>`).
 - Only linux/amd64 is built.
+- The SBOM is produced by the pinned `docker/buildkit-syft-scanner` image (`SBOM_GENERATOR_IMAGE`
+  in `versions.env`); its accuracy is that tool's.
 - The SBOM and provenance are not signed separately; they are covered by the signature of the
   image index that lists them.
